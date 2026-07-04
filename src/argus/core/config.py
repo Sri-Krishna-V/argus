@@ -13,6 +13,9 @@ class Settings(BaseSettings):
 
     # when set, /api/* requires X-API-Key or Bearer token; empty disables auth (dev default)
     api_key: str = ""
+    max_body_bytes: int = 1_048_576  # request bodies above this are rejected with 413
+    # POST /api/investigations (and the UI form) per client IP; 0 disables
+    rate_limit_investigations_per_minute: int = 6
 
     pipeline_version: int = 1
     embedding_provider: str = "fastembed"  # or "fake" (tests)
@@ -21,6 +24,7 @@ class Settings(BaseSettings):
     # version is stamped on every ExecutionRecord (ADR-0005)
     openrouter_api_key: str = ""
     llm_model: str = "google/gemini-2.5-flash"
+    llm_timeout_seconds: int = 120  # per LLM call; bounded retries handled by litellm
     agent_retrieval_k: int = 8  # chunks per query fed to stance classification
 
     # SEC asks for a descriptive User-Agent with contact info on every request
@@ -39,6 +43,10 @@ class Settings(BaseSettings):
     schedule_profiles: int = 86400
     worker_poll_seconds: float = 2.0
     job_lease_seconds: int = 600  # running past this with no completion is presumed crashed
+
+    max_fetch_bytes: int = 26_214_400  # connector downloads abort past this (25 MB)
+    db_statement_timeout_ms: int = 30_000  # kills runaway queries server-side
+    embed_batch_size: int = 128  # chunks per provider.embed() call
 
 
 @lru_cache

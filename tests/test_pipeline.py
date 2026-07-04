@@ -8,9 +8,11 @@ import sqlalchemy as sa
 from argus.core import events
 from argus.core.db import session_scope
 from argus.core.models import Event, Job
-from argus.dataplatform import pipeline
+from argus.dataplatform import pipeline, storage
+from argus.dataplatform.connectors.base import DocumentRef, run_connector
 from argus.knowledge.models import Chunk, Document, EntityMention
 from argus.observability.models import PipelineRun
+from argus.research.retrieval import search
 from tests.conftest import drain_queue, ingest_html, requires_db
 
 pytestmark = [requires_db, pytest.mark.usefixtures("fake_embeddings", "seeded_companies")]
@@ -96,3 +98,61 @@ def test_failing_job_retries_then_dead_letters(migrated_db, monkeypatch):
             )
         )
         assert dead_event is not None
+
+
+class _FakeWireConnector:
+    """Minimal Connector: discover() returns refs with no inline content, so
+    ingest() must call fetch() — the path StubConnector's inline_content skips."""
+
+    name = "fake_wire"
+
+    def __init__(self, native_id: str, html: bytes):
+        self.native_id, self.html = native_id, html
+
+    def discover(self) -> list[DocumentRef]:
+        return [
+            DocumentRef(
+                source=self.name,
+                native_id=self.native_id,
+                doc_type="news",
+                title="fake wire story",
+                url="https://example.com/fake-wire",
+            )
+        ]
+
+    def fetch(self, ref: DocumentRef) -> bytes:
+        return self.html
+
+
+def test_connector_framework_ingests_dedupes_and_is_searchable(migrated_db):
+    """End-to-end through the real connector framework (base.run_connector), not
+    the ingest_html test shortcut: exercises discover -> fetch -> dedupe -> raw
+    store -> pipeline -> search, and confirms a second pass doesn't double-ingest."""
+    connector = _FakeWireConnector("fake-wire-1", HTML.encode())
+
+    with session_scope() as session:
+        assert run_connector(session, connector) == {"seen": 1, "new": 1, "failed": 0}
+    drain_queue()
+
+    with session_scope() as session:
+        doc = session.scalar(
+            sa.select(Document).where(Document.source_native_id == "fake-wire-1")
+        )
+        assert doc is not None and doc.status == "enriched"
+        assert doc.checksum and storage.read_raw(doc.raw_path)  # raw store round-trips
+
+        chunks = session.scalars(sa.select(Chunk).where(Chunk.document_id == doc.id)).all()
+        assert chunks and all(c.embedding is not None for c in chunks)
+
+        results = search(session, "Nvidia Corp expectations")
+        assert any(r.document_id == doc.id for r in results)
+
+    # dedupe: replaying the same discover() output must not create a second document
+    with session_scope() as session:
+        assert run_connector(session, connector) == {"seen": 1, "new": 0, "failed": 0}
+        count = session.scalar(
+            sa.select(sa.func.count(Document.id)).where(
+                Document.source_native_id == "fake-wire-1"
+            )
+        )
+        assert count == 1

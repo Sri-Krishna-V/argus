@@ -64,7 +64,7 @@
   {% for c in citations %}
   <tr id="cite-{{ loop.index }}">
     <td>[{{ loop.index }}]</td>
-    <td><a href="{{ c.url }}">{{ c.title or c.source }}</a><br>
+    <td>{% if c.url %}<a href="{{ c.url }}">{{ c.title or c.source }}</a>{% else %}{{ c.title or c.source }}{% endif %}<br>
         <span class="muted small">{{ c.source }}
           {% if c.published_at %}· {{ c.published_at.strftime("%Y-%m-%d") }}{% endif %}</span></td>
     <td class="small">{{ c.excerpt }}…</td>

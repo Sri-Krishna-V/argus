@@ -6,11 +6,10 @@ import json
 import re
 from datetime import UTC, datetime
 
-import httpx
 from sqlalchemy.orm import Session
 
 from argus.core.config import get_settings
-from argus.dataplatform.connectors.base import DocumentRef
+from argus.dataplatform.connectors.base import DocumentRef, fetch_bytes
 from argus.knowledge.models import Company
 from argus.knowledge.repositories import CompanyRepository
 
@@ -37,9 +36,9 @@ class CompanyProfilesConnector:
 
     def discover(self) -> list[DocumentRef]:
         settings = get_settings()
-        content = httpx.get(
-            REGISTRY_URL, headers={"User-Agent": settings.sec_user_agent}, timeout=30
-        ).raise_for_status().content
+        content = fetch_bytes(
+            None, REGISTRY_URL, headers={"User-Agent": settings.sec_user_agent}, timeout=30
+        )
         today = datetime.now(UTC).date().isoformat()
         return [
             DocumentRef(

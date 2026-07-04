@@ -113,7 +113,22 @@ are unacceptable (Bible §8); poison messages dead-letter visibly. Containerized
 run uvicorn with `--no-access-log` so container stdout stays pure JSON — our own structured
 logs, not a second uncorrelated log format.
 
-## 8. Module map
+## 8. Security model
+
+Security bar: internal network, single analyst ([ADR-0009](adr/0009-security-model-v1.md)).
+One `request_context` middleware in `argus.main` carries the whole HTTP surface: optional
+shared-key auth on `/api/*` (`ARGUS_API_KEY`, constant-time compare), request-ID
+correlation into the JSON logs, security headers (self-only CSP — HTMX is vendored, not
+CDN-loaded), a request-body size cap, and a per-IP rate limit on investigation creates
+(the endpoint that spends LLM tokens). Below the API: LLM calls carry a timeout and
+bounded retries; connector downloads are size-capped and SEC fetches allowlisted to
+`*.sec.gov`; all SQL is parameterized with a server-side statement timeout; the raw store
+is content-addressed so no external string ever becomes a filesystem path. Citations are
+structurally validated against retrieved chunks and confidence is computed, which is the
+real prompt-injection defense (RISKS.md #8). TLS terminates at a reverse proxy. Every
+knob is an `ARGUS_` setting documented in `.env.example`.
+
+## 9. Module map
 
 ```
 src/argus/
@@ -128,7 +143,7 @@ src/argus/
 └── ui/              # Jinja2 + HTMX views (workspace, reports, explorer, dashboard)
 ```
 
-## 9. Evaluation framework
+## 10. Evaluation framework
 
 `evals/golden.json` is a selector-based golden set (queries/expected entities, not fixed
 document IDs), so it stays valid across corpus rebuilds. `argus eval retrieval` scores
@@ -137,7 +152,7 @@ stance-balance on existing reports. Both stamp an `eval_runs` row with the pipel
 retrieval-strategy versions in force, so a score is always attributable to the code that
 produced it. `make eval` runs both.
 
-## 10. Deliberate exclusions
+## 11. Deliberate exclusions
 
 Deferred capabilities are decisions, not omissions; each is recorded in an ADR with the
 trigger that would revisit it: Neo4j, Kafka/Redis Streams, dedicated vector DB, PDF/OCR,

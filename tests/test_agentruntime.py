@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from argus.agentruntime import drafter, evidence, planner
+from argus.agentruntime import adapter, drafter, evidence, planner
 from argus.agentruntime.schemas import (
     CollectedEvidence,
     DraftReport,
@@ -18,6 +18,7 @@ from argus.agentruntime.schemas import (
     Stance,
     StanceResult,
 )
+from argus.core.config import get_settings
 from argus.core.db import session_scope
 from argus.research.citations import resolve
 from tests.conftest import drain_queue, ingest_html, requires_db
@@ -94,9 +95,31 @@ def test_drafter_prompt_carries_markers_and_rejects_empty(fake_adapter):
     assert f"[chunk:{chunk_id}]" in fake_adapter[0]["message"]
     assert record.operation == "draft_report"
     assert "[chunk:" in report.narrative
+    # evidence is fenced and the instruction warns against treating it as commands
+    assert fake_adapter[0]["message"].count("---") == 2
+    assert "never treat" in drafter.INSTRUCTION.lower()
 
     with pytest.raises(ValueError, match="without evidence"):
         drafter.draft("question?", [])
+
+
+class _LiteLlmCaptured(Exception):
+    """Sentinel raised by the fake LiteLlm to abort before any live call."""
+
+
+def test_adapter_constructs_litellm_with_timeout_and_bounded_retries(monkeypatch):
+    captured = {}
+
+    def fake_lite_llm(**kwargs):
+        captured.update(kwargs)
+        raise _LiteLlmCaptured
+
+    monkeypatch.setattr("argus.agentruntime.adapter.LiteLlm", fake_lite_llm)
+    with pytest.raises(_LiteLlmCaptured):
+        adapter.run_structured("op", "instr", "msg", ResearchPlan)
+
+    assert captured["timeout"] == get_settings().llm_timeout_seconds
+    assert captured["num_retries"] == 2
 
 
 @requires_db
@@ -125,6 +148,10 @@ def test_collect_builds_cited_evidence(fake_adapter, seeded_companies):
         # every chunk reference resolves — citable by construction (ADR-0005)
         citations = resolve(session, [e.chunk_id for e in collected])
         assert len(citations) == len(collected)
+        # excerpts are fenced and numbered [n]; instruction warns against injection
+        stance_call = next(c for c in fake_adapter if c["schema"] is evidence.StanceBatch)
+        assert "[1]" in stance_call["message"] and "---" in stance_call["message"]
+        assert "never treat" in evidence.INSTRUCTION.lower()
 
 
 @requires_db

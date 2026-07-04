@@ -1,13 +1,20 @@
 """Phase 10 enterprise-default features: opt-in API-key auth, request-ID
-correlation, the readiness probe, and pagination bounds on list endpoints."""
+correlation, the readiness probe, and pagination bounds on list endpoints.
+Phase 11 hardening: security headers, body-size cap, per-IP rate limiting,
+input length caps, and the citation URL scheme guard."""
 
+import uuid
 from datetime import UTC, datetime
 
 import pytest
+import sqlalchemy as sa
 from fastapi.testclient import TestClient
 
 from argus.core.config import get_settings
-from argus.main import app
+from argus.core.db import session_scope
+from argus.investigations.models import Investigation, Report
+from argus.knowledge.models import Chunk
+from argus.main import _buckets, app
 from tests.conftest import drain_queue, ingest_html, requires_db
 
 pytestmark = [requires_db, pytest.mark.usefixtures("fake_embeddings", "seeded_companies")]
@@ -26,6 +33,28 @@ def with_api_key(monkeypatch):
     monkeypatch.setenv("ARGUS_API_KEY", "test-secret-key")
     get_settings.cache_clear()
     yield "test-secret-key"
+    get_settings.cache_clear()
+
+
+@pytest.fixture(autouse=True)
+def _reset_rate_limit_bucket():
+    """The token bucket is a module-level dict keyed by client IP; every test in
+    this module hits the app as the same TestClient host, so it must be cleared
+    around each test or unrelated tests would starve each other's quota."""
+    _buckets.clear()
+    yield
+    _buckets.clear()
+
+
+@pytest.fixture
+def rate_limit_of(monkeypatch):
+    """Override the per-minute investigation rate limit for one test."""
+
+    def _set(n: int):
+        monkeypatch.setenv("ARGUS_RATE_LIMIT_INVESTIGATIONS_PER_MINUTE", str(n))
+        get_settings.cache_clear()
+
+    yield _set
     get_settings.cache_clear()
 
 
@@ -165,3 +194,148 @@ def test_evidence_limit_and_offset(client, monkeypatch):
             f"/api/investigations/{inv_id}/evidence", params={"limit": 1, "offset": 1}
         ).json()
         assert second[0]["chunk_id"] != limited[0]["chunk_id"]
+
+
+# --- security headers ---
+
+
+def _assert_security_headers(headers):
+    assert headers["X-Content-Type-Options"] == "nosniff"
+    assert headers["X-Frame-Options"] == "DENY"
+    assert headers["Referrer-Policy"] == "same-origin"
+    assert "default-src 'self'" in headers["Content-Security-Policy"]
+
+
+def test_security_headers_on_200(client):
+    _assert_security_headers(client.get("/health").headers)
+
+
+def test_security_headers_on_401(client, with_api_key):
+    r = client.get("/api/companies", params={"q": "NVIDIA"})
+    assert r.status_code == 401
+    _assert_security_headers(r.headers)
+
+
+def test_security_headers_on_404(client):
+    r = client.get(f"/api/documents/{uuid.uuid4()}")
+    assert r.status_code == 404
+    _assert_security_headers(r.headers)
+
+
+# --- body size cap ---
+
+
+def test_body_over_cap_is_413(client):
+    cap = get_settings().max_body_bytes
+    r = client.post(
+        "/api/investigations",
+        content=b"x" * (cap + 1),
+        headers={"Content-Type": "application/json"},
+    )
+    assert r.status_code == 413
+
+
+def test_body_just_under_cap_is_not_413(client):
+    cap = get_settings().max_body_bytes
+    body = ('{"question": "' + "x" * (cap - 100) + '"}').encode()
+    assert len(body) < cap
+    r = client.post(
+        "/api/investigations", content=body, headers={"Content-Type": "application/json"}
+    )
+    # too far past the 2000-char question cap to succeed, but it must fail on
+    # validation (422), never on the body-size gate (413)
+    assert r.status_code != 413
+
+
+# --- rate limiting ---
+
+
+def test_rate_limit_429_after_bucket_exhausted(client, monkeypatch, rate_limit_of):
+    from tests.test_investigations import _fake_adapter
+
+    rate_limit_of(2)
+    _fake_adapter(monkeypatch)
+    for _ in range(2):
+        r = client.post("/api/investigations", json={"question": "rate limit check"})
+        assert r.status_code == 201
+    r = client.post("/api/investigations", json={"question": "rate limit check"})
+    assert r.status_code == 429
+    assert "rate limit" in r.json()["detail"]
+
+
+def test_rate_limit_disabled_when_zero(client, monkeypatch, rate_limit_of):
+    from tests.test_investigations import _fake_adapter
+
+    rate_limit_of(0)
+    _fake_adapter(monkeypatch)
+    for _ in range(5):
+        r = client.post("/api/investigations", json={"question": "no limit check"})
+        assert r.status_code == 201
+
+
+# --- input length caps ---
+
+
+def test_search_q_over_500_chars_is_422(client):
+    assert client.get("/api/search", params={"q": "x" * 501}).status_code == 422
+
+
+def test_companies_q_over_500_chars_is_422(client):
+    assert client.get("/api/companies", params={"q": "x" * 501}).status_code == 422
+
+
+def test_create_investigation_question_over_2000_chars_is_422(client):
+    r = client.post("/api/investigations", json={"question": "x" * 2001})
+    assert r.status_code == 422
+
+
+def test_create_investigation_empty_question_is_422(client):
+    r = client.post("/api/investigations", json={"question": ""})
+    assert r.status_code == 422
+
+
+# --- vendored static assets ---
+
+
+def test_static_htmx_is_served(client):
+    r = client.get("/static/htmx.min.js")
+    assert r.status_code == 200
+
+
+# --- citation URL scheme guard ---
+
+
+def _investigation_citing(url: str) -> uuid.UUID:
+    """Minimal investigation + report citing one real chunk, bypassing the agent
+    pipeline entirely — only the view's citation-rendering path is under test."""
+    doc_id = ingest_html(
+        "<html><body><p>Citation guard fixture document about a topic.</p></body></html>",
+        url=url, doc_type="news",
+    )
+    drain_queue()
+    with session_scope() as session:
+        chunk_id = session.scalar(
+            sa.select(Chunk.id).where(Chunk.document_id == doc_id).limit(1)
+        )
+        inv = Investigation(question="citation guard check")
+        session.add(inv)
+        session.flush()
+        session.add(Report(
+            investigation_id=inv.id, executive_summary="s",
+            narrative=f"See the source [chunk:{chunk_id}].", model="test",
+        ))
+        return inv.id
+
+
+def test_citation_javascript_url_is_not_rendered_as_a_link(client):
+    inv_id = _investigation_citing("javascript:alert(1)")
+    r = client.get(f"/investigations/{inv_id}")
+    assert r.status_code == 200
+    assert "javascript:" not in r.text
+
+
+def test_citation_http_url_still_renders_as_a_link(client):
+    inv_id = _investigation_citing("https://example.com/good-source")
+    r = client.get(f"/investigations/{inv_id}")
+    assert r.status_code == 200
+    assert 'href="https://example.com/good-source"' in r.text

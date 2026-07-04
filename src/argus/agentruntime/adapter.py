@@ -32,7 +32,12 @@ def run_structured[T: BaseModel](
     runner = Runner(
         agent=LlmAgent(
             name=operation,
-            model=LiteLlm(model=model, api_key=settings.openrouter_api_key),
+            model=LiteLlm(
+                model=model,
+                api_key=settings.openrouter_api_key,
+                timeout=settings.llm_timeout_seconds,
+                num_retries=2,
+            ),
             instruction=instruction,
             output_schema=schema,
         ),

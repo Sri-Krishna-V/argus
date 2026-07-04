@@ -13,6 +13,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from argus.core import events
+from argus.core.config import get_settings
 from argus.dataplatform import storage
 from argus.dataplatform.embeddings import get_provider
 from argus.dataplatform.extraction import CompanyMatcher
@@ -177,10 +178,13 @@ def _embed(session: Session, doc: Document, version: int) -> dict:
     )
     if chunks:
         provider = get_provider()
-        vectors = provider.embed([c.text for c in chunks])
-        for chunk, vector in zip(chunks, vectors, strict=True):
-            chunk.embedding = vector
-            chunk.embedding_model = provider.name
+        batch_size = get_settings().embed_batch_size
+        for i in range(0, len(chunks), batch_size):
+            batch = chunks[i : i + batch_size]
+            vectors = provider.embed([c.text for c in batch])
+            for chunk, vector in zip(batch, vectors, strict=True):
+                chunk.embedding = vector
+                chunk.embedding_model = provider.name
     return {"embedded": len(chunks)}
 
 

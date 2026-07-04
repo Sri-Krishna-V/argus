@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -51,7 +51,7 @@ def health_ready(session: Session = Depends(get_db)):
 
 @router.get("/api/search")
 def api_search(
-    q: str,
+    q: str = Query(..., max_length=500),
     company_id: uuid.UUID | None = None,
     doc_type: str | None = None,
     k: int = Query(10, ge=1, le=100),
@@ -63,7 +63,9 @@ def api_search(
 
 @router.get("/api/companies")
 def api_companies(
-    q: str, limit: int = Query(20, ge=1, le=200), session: Session = Depends(get_db)
+    q: str = Query(..., max_length=500),
+    limit: int = Query(20, ge=1, le=200),
+    session: Session = Depends(get_db),
 ) -> list[dict]:
     rows = session.scalars(
         select(Company).where(Company.name.ilike(f"%{q}%")).limit(limit)
@@ -88,7 +90,7 @@ def api_document(document_id: uuid.UUID, session: Session = Depends(get_db)) -> 
 
 
 class CreateInvestigation(BaseModel):
-    question: str
+    question: str = Field(min_length=1, max_length=2000)
     hypothesis: str | None = None
 
 

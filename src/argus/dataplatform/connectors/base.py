@@ -5,6 +5,7 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 
+import httpx
 from sqlalchemy.orm import Session
 
 from argus.core import events
@@ -14,6 +15,36 @@ from argus.knowledge.models import Document
 from argus.knowledge.repositories import DocumentRepository
 
 log = logging.getLogger(__name__)
+
+
+def fetch_bytes(
+    client: httpx.Client | None,
+    url: str,
+    *,
+    headers: dict | None = None,
+    timeout: float = 30,
+    follow_redirects: bool = False,
+) -> bytes:
+    """Streaming GET capped at settings.max_fetch_bytes — a single oversized or
+    malicious response must never be buffered whole. Raises ValueError past the cap;
+    raise_for_status() surfaces non-2xx. Pass an existing client to reuse its
+    headers/timeout, or None for a one-off request."""
+    limit = get_settings().max_fetch_bytes
+    stream_cm = (
+        client.stream("GET", url, follow_redirects=follow_redirects)
+        if client is not None
+        else httpx.stream(
+            "GET", url, headers=headers, timeout=timeout, follow_redirects=follow_redirects
+        )
+    )
+    with stream_cm as resp:
+        resp.raise_for_status()
+        buf = bytearray()
+        for chunk in resp.iter_bytes():
+            buf += chunk
+            if len(buf) > limit:
+                raise ValueError(f"response for {url} exceeded max_fetch_bytes cap ({limit})")
+        return bytes(buf)
 
 
 @dataclass

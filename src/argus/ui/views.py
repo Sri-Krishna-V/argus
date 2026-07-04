@@ -46,7 +46,9 @@ def workspace(request: Request, session: Session = Depends(get_db)):
 
 
 @router.post("/investigations")
-def create_investigation(question: str = Form(...), hypothesis: str = Form("")):
+def create_investigation(
+    question: str = Form(..., min_length=1, max_length=2000), hypothesis: str = Form("")
+):
     with session_scope() as session:
         inv_id = engine.create(session, question, hypothesis or None).id
     engine.execute(inv_id, "run")
@@ -70,6 +72,11 @@ def _render_narrative(session: Session, narrative: str) -> tuple[str, list]:
         if cid not in order:
             order.append(cid)
     citations = resolve(session, order) if order else []
+    # document urls come from publisher-controlled RSS feeds — only render http(s)
+    # links, else a stored javascript: URI would become a clickable citation link
+    for c in citations:
+        if not (c.url and c.url.startswith(("http://", "https://"))):
+            c.url = None
     index = {cid: i for i, cid in enumerate(order, 1)}
 
     def number(m: re.Match) -> str:

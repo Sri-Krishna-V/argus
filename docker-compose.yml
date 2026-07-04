@@ -3,10 +3,10 @@ services:
     image: pgvector/pgvector:pg16
     environment:
       POSTGRES_USER: argus
-      POSTGRES_PASSWORD: argus
+      POSTGRES_PASSWORD: ${ARGUS_POSTGRES_PASSWORD:-argus}
       POSTGRES_DB: argus
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -20,7 +20,7 @@ services:
     profiles: ["app"]
     ports: ["8000:8000"]
     environment:
-      ARGUS_DATABASE_URL: postgresql+psycopg://argus:argus@postgres:5432/argus
+      ARGUS_DATABASE_URL: postgresql+psycopg://argus:${ARGUS_POSTGRES_PASSWORD:-argus}@postgres:5432/argus
     env_file:
       - path: .env
         required: false
@@ -28,13 +28,19 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health/ready', timeout=3).status==200 else 1)"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
 
   worker:
     build: .
     profiles: ["app"]
     command: ["argus", "worker"]
     environment:
-      ARGUS_DATABASE_URL: postgresql+psycopg://argus:argus@postgres:5432/argus
+      ARGUS_DATABASE_URL: postgresql+psycopg://argus:${ARGUS_POSTGRES_PASSWORD:-argus}@postgres:5432/argus
     env_file:
       - path: .env
         required: false
@@ -42,6 +48,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    # ponytail: no port to probe; worker liveness is observed via the job lease
+    # reaper (stuck jobs get reclaimed) and pipeline dashboard, not a container healthcheck
 
 volumes:
   pgdata:

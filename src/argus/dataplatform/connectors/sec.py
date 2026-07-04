@@ -1,16 +1,18 @@
 """SEC EDGAR connector: recent filings for the configured watchlist via the official
 submissions API. Respects SEC fair-access rules (descriptive User-Agent, ~10 req/s)."""
 
+import json
 import logging
 import time
 from datetime import UTC, datetime
+from urllib.parse import urlparse
 
 import httpx
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from argus.core.config import get_settings
-from argus.dataplatform.connectors.base import DocumentRef
+from argus.dataplatform.connectors.base import DocumentRef, fetch_bytes
 from argus.knowledge.models import Company
 
 log = logging.getLogger(__name__)
@@ -44,12 +46,13 @@ class SecEdgarConnector:
         with self._client() as client:
             for cik, company_name in self._watchlist_ciks():
                 try:
-                    data = (
-                        client.get(f"https://data.sec.gov/submissions/CIK{int(cik):010d}.json")
-                        .raise_for_status()
-                        .json()
+                    data = json.loads(
+                        fetch_bytes(
+                            client,
+                            f"https://data.sec.gov/submissions/CIK{int(cik):010d}.json",
+                        )
                     )
-                except httpx.HTTPError:
+                except (httpx.HTTPError, ValueError):
                     # one bad company must not kill the pass (docs/RISKS.md #5)
                     log.exception("submissions fetch failed", extra={"context": {"cik": cik}})
                     continue
@@ -86,7 +89,11 @@ class SecEdgarConnector:
         return refs
 
     def fetch(self, ref: DocumentRef) -> bytes:
+        host = urlparse(ref.url).hostname or ""
+        if host != "sec.gov" and not host.endswith(".sec.gov"):
+            # ponytail: defense-in-depth — ref.url is derived from SEC's own API response
+            raise ValueError(f"refusing to fetch non-SEC host: {host}")
         with self._client() as client:
-            content = client.get(ref.url).raise_for_status().content
+            content = fetch_bytes(client, ref.url)
         time.sleep(0.15)
         return content
