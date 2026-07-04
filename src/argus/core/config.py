@@ -14,6 +14,12 @@ class Settings(BaseSettings):
     pipeline_version: int = 1
     embedding_provider: str = "fastembed"  # or "fake" (tests)
 
+    # agent runtime: any OpenRouter model id, swappable via env; the resolved model
+    # version is stamped on every ExecutionRecord (ADR-0005)
+    openrouter_api_key: str = ""
+    llm_model: str = "google/gemini-2.5-flash"
+    agent_retrieval_k: int = 8  # chunks per query fed to stance classification
+
     # SEC asks for a descriptive User-Agent with contact info on every request
     sec_user_agent: str = "Argus Research Platform srikrishna.vundavalli@gmail.com"
     sec_watchlist: list[str] = ["AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSM", "AVGO"]
