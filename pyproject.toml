@@ -7,18 +7,22 @@ requires-python = ">=3.12"
 dependencies = [
     "alembic>=1.13",
     "beautifulsoup4>=4.15.0",
+    "fastapi>=0.139.0",
     "fastembed>=0.8.0",
     "feedparser>=6.0.12",
     "google-adk>=2.3.0",
     "httpx>=0.28.1",
+    "jinja2>=3.1.6",
     "litellm>=1.90.3",
     "lxml>=6.1.1",
     "pgvector>=0.4.2",
     "psycopg[binary]>=3.1",
     "pydantic>=2.7",
     "pydantic-settings>=2.2",
+    "python-multipart>=0.0.32",
     "sqlalchemy>=2.0",
     "typer>=0.26.8",
+    "uvicorn>=0.49.0",
 ]
 
 [dependency-groups]
@@ -45,6 +49,10 @@ src = ["src", "tests"]
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
 
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI dependency injection is evaluated per-request, not at import (B008 false positive)
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Form"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
@@ -56,7 +64,8 @@ root_package = "argus"
 name = "Layered architecture (ARCHITECTURE.md §2)"
 type = "layers"
 layers = [
-    "argus.ui | argus.api",
+    "argus.ui",
+    "argus.api",
     "argus.investigations",
     "argus.agentruntime",
     "argus.research",

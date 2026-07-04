@@ -39,7 +39,10 @@ the Research Engine imports AI code. Enforced with `import-linter`, not by conve
 One nuance: in *import* terms the Knowledge Platform sits below the Data Platform —
 pipeline stages depend on the knowledge models and repositories they populate, never the
 reverse. The Bible's diagram describes data flow (upward); the import contract describes
-code dependency (downward onto the organization's memory).
+code dependency (downward onto the organization's memory). Similarly, `ui/` sits one
+import layer above `api/` (views reuse the API's session dependency); `argus.main` is the
+composition root that mounts both routers into one FastAPI app, and `argus.cli` the
+entry point for worker/ingest commands — both live outside the layer stack.
 
 ## 3. The AI boundary
 

@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Search{% endblock %}
+{% block content %}
+<h1>Knowledge search</h1>
+<form method="get" action="/search">
+  <input type="text" name="q" value="{{ q }}" placeholder="data center GPU demand" required>
+</form>
+
+{% if q %}
+<p class="muted small">{{ results|length }} results · hybrid-rrf/v1</p>
+{% for r in results %}
+<div class="panel">
+  <a href="{{ r.url }}">{{ r.title or r.source }}</a>
+  <span class="badge">{{ r.doc_type }}</span>
+  <span class="muted small">{{ r.source }}
+    {% if r.published_at %}· {{ r.published_at.strftime("%Y-%m-%d") }}{% endif %}
+    · rrf {{ "%.4f"|format(r.scores.rrf) }}</span>
+  <p class="small">{{ r.text[:400] }}…</p>
+</div>
+{% else %}
+<p class="muted">No results.</p>
+{% endfor %}
+{% endif %}
+{% endblock %}

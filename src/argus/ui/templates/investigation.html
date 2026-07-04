@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}{{ inv.question }}{% endblock %}
+{% block content %}
+<h1>{{ inv.question }}</h1>
+<p>
+  <span class="badge {{ inv.status }}">{{ inv.status }}</span>
+  <span class="badge">v{{ inv.version }}</span>
+  {% if stale %}<span class="badge stale">new evidence available</span>{% endif %}
+  {% if inv.status in ("complete", "failed") %}
+  <form method="post" action="/investigations/{{ inv.id }}/refresh" style="display:inline">
+    <button>Refresh evidence <span class="spinner">⏳</span></button>
+  </form>
+  {% endif %}
+</p>
+
+{% for h in hypotheses %}
+<p class="muted small">Hypothesis: {{ h.statement }}</p>
+{% endfor %}
+
+{% if inv.confidence is not none %}
+<div class="panel">
+  <h2 style="margin-top:0">Confidence: {{ "%.2f"|format(inv.confidence) }}</h2>
+  <div class="bar"><div style="width:{{ (inv.confidence * 100)|round }}%"></div></div>
+  <table style="margin-top:1rem">
+    <tr><th>Component</th><th>Value</th><th>Weight</th></tr>
+    {% for name, c in inv.confidence_breakdown.get("components", {}).items() %}
+    <tr><td>{{ name.replace("_", " ") }}</td>
+        <td>{{ "%.2f"|format(c.value) }}</td><td>{{ c.weight }}</td></tr>
+    {% endfor %}
+  </table>
+  {% set inputs = inv.confidence_breakdown.get("inputs", {}) %}
+  <p class="muted small">
+    {{ inputs.get("distinct_documents", 0) }} documents across
+    {{ inputs.get("distinct_sources", 0) }} sources ·
+    {{ inputs.get("supporting", 0) }} supporting /
+    {{ inputs.get("contradicting", 0) }} contradicting /
+    {{ inputs.get("unknown", 0) }} unknown
+  </p>
+</div>
+{% endif %}
+
+{% if report %}
+<div class="panel">
+  <h2 style="margin-top:0">Executive summary</h2>
+  <p>{{ report.executive_summary }}</p>
+  <h2>Key findings</h2>
+  <ul>{% for f in report.key_findings %}<li>{{ f }}</li>{% endfor %}</ul>
+  {% if report.risks %}
+  <h2>Risks &amp; contradictions</h2>
+  <ul>{% for r in report.risks %}<li>{{ r }}</li>{% endfor %}</ul>
+  {% endif %}
+  <h2>Narrative</h2>
+  <p>{{ narrative_html | safe }}</p>
+  {% if report.follow_up_questions %}
+  <h2>Follow-up questions</h2>
+  <ul>{% for f in report.follow_up_questions %}<li>{{ f }}</li>{% endfor %}</ul>
+  {% endif %}
+  <p class="muted small">drafted by {{ report.model }} · {{ report.created_at.strftime("%Y-%m-%d %H:%M") }}</p>
+</div>
+
+<h2>Citations</h2>
+<table>
+  <tr><th>#</th><th>Source</th><th>Excerpt</th></tr>
+  {% for c in citations %}
+  <tr id="cite-{{ loop.index }}">
+    <td>[{{ loop.index }}]</td>
+    <td><a href="{{ c.url }}">{{ c.title or c.source }}</a><br>
+        <span class="muted small">{{ c.source }}
+          {% if c.published_at %}· {{ c.published_at.strftime("%Y-%m-%d") }}{% endif %}</span></td>
+    <td class="small">{{ c.excerpt }}…</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
+
+<h2>Evidence</h2>
+{% for stance in ("supporting", "contradicting", "unknown") %}
+  {% set items = by_stance[stance] %}
+  <h3 class="muted small" style="text-transform:uppercase; letter-spacing:.08em">
+    {{ stance }} ({{ items|length }})</h3>
+  {% for e in items %}
+  <div class="evidence stance-{{ e.stance }}">
+    {{ e.excerpt }}
+    <div class="meta">{{ e.rationale }} · query: “{{ e.query }}” · {{ e.strategy }}</div>
+  </div>
+  {% else %}<p class="muted small">none</p>{% endfor %}
+{% endfor %}
+
+{% if links %}
+<h2>Related investigations</h2>
+<ul>
+  {% for link, other in links %}
+  <li><a href="/investigations/{{ other.id }}">{{ other.question }}</a>
+      <span class="muted small">({{ link.link_type }})</span></li>
+  {% endfor %}
+</ul>
+{% endif %}
+{% endblock %}

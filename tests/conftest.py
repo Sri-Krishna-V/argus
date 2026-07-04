@@ -47,11 +47,16 @@ requires_db = pytest.mark.skipif(not DB_AVAILABLE, reason="Postgres not running 
 
 @pytest.fixture(scope="session")
 def migrated_db():
-    """Upgrade to head once per test session; tests own their data."""
-    command.upgrade(Config("alembic.ini"), "head")
+    """Fresh schema per session: argus_test persists across pytest runs, and
+    accumulated fixture documents would make ranking assertions order-dependent."""
     from argus.core.db import get_engine
 
-    return get_engine()
+    engine = get_engine()
+    with engine.begin() as conn:
+        conn.execute(sa.text("drop schema public cascade"))
+        conn.execute(sa.text("create schema public"))
+    command.upgrade(Config("alembic.ini"), "head")
+    return engine
 
 
 @pytest.fixture

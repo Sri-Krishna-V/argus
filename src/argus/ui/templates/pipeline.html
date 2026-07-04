@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Pipeline{% endblock %}
+{% block content %}
+<h1>Pipeline status</h1>
+
+<div class="panel">
+  <h2 style="margin-top:0">Queue</h2>
+  <p>
+    {% for status, n in queue.items() %}
+      <span class="badge {{ 'failed' if status == 'dead' else '' }}">{{ status }}: {{ n }}</span>
+    {% else %}<span class="muted">queue empty</span>{% endfor %}
+    <span class="badge">documents: {{ counts.documents }}</span>
+  </p>
+</div>
+
+{% if dead %}
+<div class="panel">
+  <h2 style="margin-top:0">Dead letters</h2>
+  <table>
+    <tr><th>Job</th><th>Document</th><th>Attempts</th><th>Last error</th></tr>
+    {% for j in dead %}
+    <tr><td>{{ j.job_type }}</td><td class="small muted">{{ j.document_id }}</td>
+        <td>{{ j.attempts }}</td><td class="small">{{ (j.last_error or "")[:120] }}</td></tr>
+    {% endfor %}
+  </table>
+</div>
+{% endif %}
+
+<h2>Recent stage runs</h2>
+<table>
+  <tr><th>Stage</th><th>Status</th><th>Duration</th><th>Document</th><th>At</th></tr>
+  {% for r in recent %}
+  <tr>
+    <td>{{ r.stage }}</td>
+    <td><span class="badge {{ 'complete' if r.status == 'success' else 'failed' }}">{{ r.status }}</span></td>
+    <td>{{ r.duration_ms }} ms</td>
+    <td class="small muted">{{ r.document_id }}</td>
+    <td class="small muted">{{ r.created_at.strftime("%H:%M:%S") }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endblock %}

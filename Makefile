@@ -1,4 +1,4 @@
-.PHONY: up down migrate test lint worker
+.PHONY: up down migrate test lint worker api
 
 up:            ## Start Postgres (pgvector) and wait until healthy
 	docker compose up -d --wait
@@ -18,3 +18,6 @@ lint:          ## Ruff + layered-architecture contract
 
 worker:        ## Run the pipeline worker + connector scheduler
 	uv run argus worker
+
+api:           ## Run the API + UI
+	uv run uvicorn argus.main:app --reload

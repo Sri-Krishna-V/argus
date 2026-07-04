@@ -33,7 +33,7 @@ class StanceBatch(BaseModel):
     results: list[StanceResult]
 
 
-def _resolve_companies(session: Session, names: list[str]) -> list[uuid.UUID]:
+def resolve_companies(session: Session, names: list[str]) -> list[uuid.UUID]:
     """Planner names → canonical company ids; unresolvable names are dropped."""
     ids = []
     for name in names:
@@ -51,24 +51,36 @@ def _resolve_companies(session: Session, names: list[str]) -> list[uuid.UUID]:
     return ids
 
 
+def retrieve(
+    session: Session, query: str, company_ids: list[uuid.UUID | None],
+    doc_types: list[str] | None, k: int, seen: set[uuid.UUID],
+) -> list[RetrievalResult]:
+    """Deterministic retrieval for one query — also the replay unit: re-running with
+    the recorded params must reproduce the chunk set (Bible §13)."""
+    hits: list[RetrievalResult] = []
+    for company_id in company_ids:
+        filters = SearchFilters(company_id=company_id, doc_types=doc_types)
+        for hit in search(session, query, filters=filters, k=k):
+            if hit.chunk_id not in seen:
+                seen.add(hit.chunk_id)
+                hits.append(hit)
+    return hits
+
+
 def collect(
-    session: Session, question: str, plan: ResearchPlan, k: int | None = None
+    session: Session, question: str, plan: ResearchPlan, k: int | None = None,
+    company_ids: list[uuid.UUID] | None = None,
 ) -> tuple[list[CollectedEvidence], list[ExecutionRecord]]:
     k = k or get_settings().agent_retrieval_k
-    company_ids = _resolve_companies(session, plan.companies) or [None]
+    if company_ids is None:
+        company_ids = resolve_companies(session, plan.companies)
     doc_types = plan.doc_types or None
     seen: set[uuid.UUID] = set()
     evidence: list[CollectedEvidence] = []
     records: list[ExecutionRecord] = []
 
     for query in plan.queries:
-        hits: list[RetrievalResult] = []
-        for company_id in company_ids:
-            filters = SearchFilters(company_id=company_id, doc_types=doc_types)
-            for hit in search(session, query, filters=filters, k=k):
-                if hit.chunk_id not in seen:
-                    seen.add(hit.chunk_id)
-                    hits.append(hit)
+        hits = retrieve(session, query, company_ids or [None], doc_types, k, seen)
         if not hits:
             continue
 
