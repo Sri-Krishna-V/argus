@@ -92,6 +92,12 @@ Connector → raw store + documents row + event
                                                   (each stage: event + pipeline_runs row)
 ```
 
+Crash recovery: each claimed job carries a lease; a reaper (`reap_stale` in
+`dataplatform/worker.py`) re-queues jobs stuck `running` past `ARGUS_JOB_LEASE_SECONDS`
+(default 600), since stages are idempotent and safe to re-run. Jobs that exhaust
+`max_attempts` dead-letter (`status='dead'`, `job.dead` event) instead of retrying forever;
+dead jobs are visible on the pipeline dashboard and requeued with `argus retry-dead`.
+
 ## 6. Reproducibility
 
 Every investigation persists its full execution history in `investigation_events`: prompts,
@@ -101,8 +107,11 @@ version. A future engineer can replay an investigation and obtain the same retri
 ## 7. Observability
 
 Every pipeline stage writes a `pipeline_runs` row (duration, status, error, retry count).
-Queue depth comes from `jobs`. Exposed at `/metrics/pipeline` and on the pipeline dashboard.
-Silent failures are unacceptable (Bible §8); poison messages dead-letter visibly.
+Queue depth comes from `jobs`. Exposed at `/api/metrics/pipeline` (also fields
+`oldest_pending_seconds`, `retries_24h`) and on the pipeline dashboard. Silent failures
+are unacceptable (Bible §8); poison messages dead-letter visibly. Containerized deployments
+run uvicorn with `--no-access-log` so container stdout stays pure JSON — our own structured
+logs, not a second uncorrelated log format.
 
 ## 8. Module map
 
@@ -119,7 +128,16 @@ src/argus/
 └── ui/              # Jinja2 + HTMX views (workspace, reports, explorer, dashboard)
 ```
 
-## 9. Deliberate exclusions
+## 9. Evaluation framework
+
+`evals/golden.json` is a selector-based golden set (queries/expected entities, not fixed
+document IDs), so it stays valid across corpus rebuilds. `argus eval retrieval` scores
+hybrid retrieval (hit-rate, MRR); `argus eval investigation` scores citation-coverage and
+stance-balance on existing reports. Both stamp an `eval_runs` row with the pipeline and
+retrieval-strategy versions in force, so a score is always attributable to the code that
+produced it. `make eval` runs both.
+
+## 10. Deliberate exclusions
 
 Deferred capabilities are decisions, not omissions; each is recorded in an ADR with the
 trigger that would revisit it: Neo4j, Kafka/Redis Streams, dedicated vector DB, PDF/OCR,

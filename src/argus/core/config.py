@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     schedule_sec: int = 3600
     schedule_profiles: int = 86400
     worker_poll_seconds: float = 2.0
+    job_lease_seconds: int = 600  # running past this with no completion is presumed crashed
 
 
 @lru_cache

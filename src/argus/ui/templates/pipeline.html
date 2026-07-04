@@ -13,18 +13,19 @@
   </p>
 </div>
 
-{% if dead %}
 <div class="panel">
   <h2 style="margin-top:0">Dead letters</h2>
+  {% if dead %}
   <table>
-    <tr><th>Job</th><th>Document</th><th>Attempts</th><th>Last error</th></tr>
+    <tr><th>ID</th><th>Job</th><th>Document</th><th>Attempts</th><th>Last error</th><th>Claimed</th></tr>
     {% for j in dead %}
-    <tr><td>{{ j.job_type }}</td><td class="small muted">{{ j.document_id }}</td>
-        <td>{{ j.attempts }}</td><td class="small">{{ (j.last_error or "")[:120] }}</td></tr>
+    <tr><td>{{ j.id }}</td><td>{{ j.job_type }}</td><td class="small muted">{{ j.document_id }}</td>
+        <td>{{ j.attempts }}</td><td class="small">{{ (j.last_error or "")[:120] }}</td>
+        <td class="small muted">{{ j.claimed_at.strftime("%H:%M:%S") if j.claimed_at else "" }}</td></tr>
     {% endfor %}
   </table>
+  {% else %}<p class="muted">none</p>{% endif %}
 </div>
-{% endif %}
 
 <h2>Recent stage runs</h2>
 <table>

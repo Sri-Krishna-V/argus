@@ -38,12 +38,21 @@ make up        # Postgres 16 + pgvector via docker compose
 make migrate   # apply database migrations
 make test      # run the test suite
 make lint      # ruff + layered-architecture contract
+make worker    # run the pipeline worker + connector scheduler
+make api       # run the API + UI (uvicorn --reload)
+make stack     # build and run the full app (postgres + api + worker) in containers
+make eval      # score retrieval and investigation quality against the golden set
+make backup    # pg_dump + raw-store tarball into backups/
+make restore   # restore from a backup: make restore DB_DUMP=... RAW_TGZ=...
 ```
 
 ## Status
 
-Under construction, following the Design Bible's ten-phase roadmap (§22). Currently:
-**Phase 1 — Product Definition** complete; Phase 2 — Domain Modeling next.
+V1 complete: all ten roadmap phases (Design Bible §22) are implemented — ingestion
+pipeline, knowledge graph, hybrid retrieval, agent runtime, citation-gated investigations,
+UI, containerized stack, and the eval framework. One item remains explicitly pending:
+live end-to-end verification against a real LLM, which awaits `ARGUS_OPENROUTER_API_KEY`.
+Everything else is verified against a deterministic fake adapter.
 
 ## What V1 deliberately excludes
 

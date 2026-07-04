@@ -67,6 +67,35 @@ def reprocess(
     typer.echo(f"enqueued {stage} for {len(doc_ids)} documents at v{pipeline_version}")
 
 
+@app.command("retry-dead")
+def retry_dead(
+    job_id: int | None = typer.Option(None, "--job-id", help="retry only this job"),
+    yes: bool = typer.Option(False, "--yes", help="skip confirmation when retrying all"),
+) -> None:
+    """Reset dead (poison) jobs back to pending for another attempt."""
+    from datetime import UTC, datetime
+
+    from sqlalchemy import update
+
+    from argus.core.models import Job
+
+    with session_scope() as session:
+        if job_id is not None:
+            job = session.get(Job, job_id)
+            if job is None or job.status != "dead":
+                typer.echo(f"no dead job with id {job_id}")
+                raise typer.Exit(1)
+            stmt = update(Job).where(Job.id == job_id)
+        else:
+            if not yes:
+                typer.confirm("retry all dead jobs?", abort=True)
+            stmt = update(Job).where(Job.status == "dead")
+        result = session.execute(
+            stmt.values(status="pending", attempts=0, run_after=datetime.now(UTC))
+        )
+        typer.echo(f"retried {result.rowcount} job(s)")
+
+
 @eval_app.command("retrieval")
 def eval_retrieval_cmd(
     golden: Path = typer.Option(

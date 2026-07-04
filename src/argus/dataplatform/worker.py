@@ -4,9 +4,9 @@ scheduler. Scale-out = run more worker processes; claiming is already safe."""
 
 import logging
 import time
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from argus.core import events
@@ -36,6 +36,26 @@ def claim_next(session: Session) -> Job | None:
         job.claimed_at = datetime.now(UTC)
         job.attempts += 1
     return job
+
+
+def reap_stale(session: Session) -> int:
+    """Re-queue jobs whose worker died mid-run (running past the lease).
+
+    Safe because stages are idempotent on (document_id, stage, pipeline_version);
+    attempts were already bumped at claim, so a crash-looping job still dies
+    after max_attempts.
+    """
+    lease = timedelta(seconds=get_settings().job_lease_seconds)
+    result = session.execute(
+        update(Job)
+        .where(Job.status == "running", Job.claimed_at < datetime.now(UTC) - lease)
+        .values(status="pending", run_after=datetime.now(UTC))
+        .returning(Job.id)
+    )
+    ids = result.scalars().all()
+    if ids:
+        log.info("reaped stale jobs", extra={"context": {"job_ids": ids}})
+    return len(ids)
 
 
 def _execute(session: Session, job: Job) -> None:
@@ -142,5 +162,7 @@ def main_loop() -> None:  # pragma: no cover - long-running entry point
             if time.monotonic() - last_run[name] >= getattr(settings, interval_key):
                 last_run[name] = time.monotonic()
                 run_connector_pass(name)
+        with session_scope() as session:
+            reap_stale(session)
         if not run_once():
             time.sleep(settings.worker_poll_seconds)

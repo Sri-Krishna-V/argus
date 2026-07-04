@@ -65,6 +65,8 @@ def search(
     filters: SearchFilters | None = None,
     k: int = 10,
 ) -> list[RetrievalResult]:
+    if not query.strip() or k <= 0:  # ponytail: nothing to rank; avoid empty/zero-limit edge cases
+        return []
     filters = filters or SearchFilters()
     pool = k * POOL_FACTOR
 

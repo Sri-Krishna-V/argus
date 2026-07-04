@@ -11,6 +11,9 @@ make up        # start Postgres (pgvector) via docker compose, wait for healthy
 make migrate   # alembic upgrade head
 make test      # pytest
 make lint      # ruff check + lint-imports (layer contract)
+make eval      # score retrieval + investigation quality against evals/golden.json
+make stack / make stack-down   # full containerized stack (postgres + api + worker)
+make backup / make restore     # pg_dump + raw-store tarball; restore from backup files
 uv run alembic revision -m "..."   # new migration (hand-written, numbered 000N_slug)
 ```
 
@@ -25,6 +28,7 @@ uv run alembic revision -m "..."   # new migration (hand-written, numbered 000N_
 - **Every AI output carries citations**; evidence without a chunk reference is rejected.
 - **Confidence is computed, never LLM-generated.**
 - Sync code only (ADR-0004): sync SQLAlchemy, sync httpx, `def` endpoints.
+- Jobs: stuck `running` jobs are reaped after ARGUS_JOB_LEASE_SECONDS; failed jobs dead-letter at max_attempts (`argus retry-dead`).
 
 ## Conventions
 
