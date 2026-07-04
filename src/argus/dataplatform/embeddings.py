@@ -24,17 +24,23 @@ class FastEmbedProvider:
 
 
 class FakeProvider:
-    """Deterministic hash-based vectors for tests; no model download."""
+    """Deterministic bag-of-words feature hashing for tests: no model download, and
+    texts sharing vocabulary get genuinely similar vectors, so hybrid-retrieval tests
+    exercise the semantic signal instead of fighting hash noise."""
 
-    name = "fake/deterministic-sha256"
+    name = "fake/feature-hash-bow"
 
     def embed(self, texts: list[str]) -> list[list[float]]:
         out = []
         for text in texts:
-            seed = hashlib.sha256(text.encode()).digest()
-            raw = [seed[i % len(seed)] - 128 for i in range(EMBEDDING_DIM)]
-            norm = math.sqrt(sum(x * x for x in raw)) or 1.0
-            out.append([x / norm for x in raw])
+            vec = [0.0] * EMBEDDING_DIM
+            for token in text.lower().split():
+                digest = hashlib.sha256(token.encode()).digest()
+                dim = int.from_bytes(digest[:4]) % EMBEDDING_DIM
+                sign = 1.0 if digest[4] % 2 else -1.0
+                vec[dim] += sign
+            norm = math.sqrt(sum(x * x for x in vec)) or 1.0
+            out.append([x / norm for x in vec])
         return out
 
 

@@ -95,25 +95,24 @@ def seeded_companies(db_session):
 class StubConnector:
     name = "test_stub"
 
-    def __init__(self, html: str, native_id: str):
-        self.html, self.native_id = html, native_id
+    def __init__(self, html: str, native_id: str, **ref_overrides):
+        self.html, self.native_id, self.overrides = html, native_id, ref_overrides
 
     def discover(self):
         from argus.dataplatform.connectors.base import DocumentRef
 
-        return [
-            DocumentRef(
-                source="test_stub",
-                native_id=self.native_id,
-                doc_type="news",
-                title="stub document",
-                url="https://example.com/stub",
-                inline_content=self.html.encode(),
-            )
-        ]
+        ref = dict(
+            source="test_stub",
+            native_id=self.native_id,
+            doc_type="news",
+            title="stub document",
+            url="https://example.com/stub",
+            inline_content=self.html.encode(),
+        )
+        return [DocumentRef(**{**ref, **self.overrides})]
 
 
-def ingest_html(html: str):
+def ingest_html(html: str, **ref_overrides):
     """Ingest one stub document; returns its document id."""
     import uuid
 
@@ -123,7 +122,7 @@ def ingest_html(html: str):
 
     native_id = str(uuid.uuid4())
     with session_scope() as session:
-        assert ingest(session, StubConnector(html, native_id))["new"] == 1
+        assert ingest(session, StubConnector(html, native_id, **ref_overrides))["new"] == 1
         return session.scalar(
             sa.select(Document.id).where(Document.source_native_id == native_id)
         )

@@ -4,8 +4,8 @@ import uuid
 from datetime import datetime
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import DateTime, ForeignKey, Text, UniqueConstraint, text
-from sqlalchemy.dialects.postgresql import ARRAY, JSONB
+from sqlalchemy import Computed, DateTime, ForeignKey, Text, UniqueConstraint, text
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, TSVECTOR
 from sqlalchemy.orm import Mapped, mapped_column
 
 from argus.core.db import Base
@@ -85,6 +85,7 @@ class Chunk(Base):
     embedding: Mapped[list[float] | None] = mapped_column(Vector(EMBEDDING_DIM))
     embedding_model: Mapped[str | None]
     pipeline_version: Mapped[int] = mapped_column(server_default=text("1"))
+    tsv = mapped_column(TSVECTOR, Computed("to_tsvector('english', text)", persisted=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_now)
 
 

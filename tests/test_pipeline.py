@@ -37,7 +37,7 @@ def test_document_flows_through_full_pipeline(migrated_db):
         chunks = session.scalars(sa.select(Chunk).where(Chunk.document_id == doc_id)).all()
         assert len(chunks) > 1
         assert all(c.embedding is not None for c in chunks)
-        assert all(c.embedding_model == "fake/deterministic-sha256" for c in chunks)
+        assert all(c.embedding_model == "fake/feature-hash-bow" for c in chunks)
 
         mentions = session.scalars(
             sa.select(EntityMention).where(EntityMention.document_id == doc_id)
