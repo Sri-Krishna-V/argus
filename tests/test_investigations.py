@@ -111,7 +111,8 @@ def _fake_adapter(monkeypatch, narrative_marker="valid"):
         if schema is DraftReport:
             if narrative_marker == "valid":
                 chunk = re.search(r"\[chunk:([0-9a-f-]{36})\]", message).group(1)
-                narrative = f"Growth is strong [chunk:{chunk}]."
+                # hostile fragment: LLM output must render escaped in the UI
+                narrative = f"<script>alert(1)</script> Growth is strong [chunk:{chunk}]."
             elif narrative_marker == "invented":
                 narrative = f"Growth is strong [chunk:{uuid.uuid4()}]."
             else:
@@ -378,5 +379,8 @@ def test_ui_pages_render(client, monkeypatch, corpus):
     detail = client.get(f"/investigations/{inv_id}").text
     assert "Executive summary" in detail and "Confidence" in detail
     assert "cite-1" in detail  # markers rendered as resolvable citation links
+    # LLM narrative is untrusted: raw HTML must arrive escaped, never executable
+    assert "<script>alert(1)</script>" not in detail
+    assert "&lt;script&gt;" in detail
     assert client.get("/search", params={"q": "GPU demand"}).status_code == 200
     assert client.get("/pipeline").status_code == 200

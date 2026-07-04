@@ -8,6 +8,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+from markupsafe import escape
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -60,7 +61,9 @@ def refresh_investigation(investigation_id: uuid.UUID):
 
 def _render_narrative(session: Session, narrative: str) -> tuple[str, list]:
     """Replace [chunk:<uuid>] markers with numbered citation references and return
-    the resolved citation list, in first-appearance order."""
+    the resolved citation list, in first-appearance order. The narrative is LLM
+    output — HTML-escape it before injecting our own markup (the template renders
+    the result with `| safe`)."""
     order: list[uuid.UUID] = []
     for m in engine.MARKER_RE.finditer(narrative):
         cid = uuid.UUID(m.group(1))
@@ -73,7 +76,7 @@ def _render_narrative(session: Session, narrative: str) -> tuple[str, list]:
         n = index[uuid.UUID(m.group(1))]
         return f'<sup><a href="#cite-{n}">[{n}]</a></sup>'
 
-    return engine.MARKER_RE.sub(number, narrative), citations
+    return engine.MARKER_RE.sub(number, str(escape(narrative))), citations
 
 
 @router.get("/investigations/{investigation_id}")
