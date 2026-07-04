@@ -1,0 +1,88 @@
+{
+  "version": 1,
+  "questions": [
+    {
+      "id": "aapl-china-exposure",
+      "question": "How exposed is Apple to China supply chain risk?",
+      "expected": [{"ticker": "AAPL", "doc_type": "10-K"}]
+    },
+    {
+      "id": "msft-cloud-risk",
+      "question": "What risk factors does Microsoft disclose around its cloud business?",
+      "expected": [{"ticker": "MSFT", "doc_type": "10-K"}]
+    },
+    {
+      "id": "nvda-export-controls",
+      "question": "How do export controls on advanced chips affect NVIDIA's business?",
+      "expected": [{"ticker": "NVDA", "doc_type": "10-K"}]
+    },
+    {
+      "id": "googl-antitrust-risk",
+      "question": "What antitrust and regulatory risks does Alphabet describe?",
+      "expected": [{"ticker": "GOOGL", "doc_type": "10-K"}]
+    },
+    {
+      "id": "amzn-logistics-risk",
+      "question": "What risks does Amazon identify in its logistics and fulfillment network?",
+      "expected": [{"ticker": "AMZN", "doc_type": "10-K"}]
+    },
+    {
+      "id": "meta-quarterly-results",
+      "question": "What were Meta's most recent quarterly financial results?",
+      "expected": [{"ticker": "META", "doc_type": "10-Q"}]
+    },
+    {
+      "id": "aapl-quarterly-results",
+      "question": "How did Apple's revenue perform last quarter?",
+      "expected": [{"ticker": "AAPL", "doc_type": "10-Q"}, {"ticker": "AAPL", "doc_type": "10-K"}]
+    },
+    {
+      "id": "tsm-quarterly-results",
+      "question": "What did TSMC report for quarterly earnings and margins?",
+      "expected": [{"ticker": "TSM", "doc_type": "10-Q"}, {"ticker": "TSM", "doc_type": "10-K"}]
+    },
+    {
+      "id": "nvda-8k-event",
+      "question": "What material event did NVIDIA recently disclose in a current report?",
+      "expected": [{"ticker": "NVDA", "doc_type": "8-K"}]
+    },
+    {
+      "id": "avgo-8k-event",
+      "question": "What recent 8-K event did Broadcom announce?",
+      "expected": [{"ticker": "AVGO", "doc_type": "8-K"}]
+    },
+    {
+      "id": "msft-8k-event",
+      "question": "What current event did Microsoft file an 8-K about?",
+      "expected": [{"ticker": "MSFT", "doc_type": "8-K"}]
+    },
+    {
+      "id": "aapl-news",
+      "question": "What recent news has come out about Apple?",
+      "expected": [{"ticker": "AAPL", "doc_type": "news"}]
+    },
+    {
+      "id": "amzn-news",
+      "question": "What is the latest news coverage of Amazon?",
+      "expected": [{"ticker": "AMZN", "doc_type": "news"}]
+    },
+    {
+      "id": "chipmakers-ai-demand",
+      "question": "Which chipmakers are exposed to AI demand swings?",
+      "expected": [
+        {"ticker": "NVDA"},
+        {"ticker": "TSM"},
+        {"ticker": "AVGO"}
+      ]
+    },
+    {
+      "id": "big-tech-antitrust",
+      "question": "Which big tech companies face antitrust scrutiny?",
+      "expected": [
+        {"ticker": "GOOGL"},
+        {"ticker": "AMZN"},
+        {"ticker": "META"}
+      ]
+    }
+  ]
+}

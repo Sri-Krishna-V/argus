@@ -50,8 +50,9 @@ src = ["src", "tests"]
 select = ["E", "F", "I", "UP", "B", "SIM"]
 
 [tool.ruff.lint.flake8-bugbear]
-# FastAPI dependency injection is evaluated per-request, not at import (B008 false positive)
-extend-immutable-calls = ["fastapi.Depends", "fastapi.Form"]
+# FastAPI dependency injection is evaluated per-request, not at import (B008 false positive);
+# typer.Option/Argument are the same pattern for CLI option metadata.
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Form", "typer.Option", "typer.Argument"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -66,6 +67,7 @@ type = "layers"
 layers = [
     "argus.ui",
     "argus.api",
+    "argus.evals",
     "argus.investigations",
     "argus.agentruntime",
     "argus.research",

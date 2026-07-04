@@ -1,6 +1,7 @@
 """Argus operations CLI."""
 
 import uuid
+from pathlib import Path
 
 import typer
 
@@ -9,6 +10,8 @@ from argus.core.db import session_scope
 from argus.core.logging import configure_logging
 
 app = typer.Typer(help="Argus — Enterprise Research Operating System", no_args_is_help=True)
+eval_app = typer.Typer(no_args_is_help=True, help="Run evaluation harnesses (Phase 8).")
+app.add_typer(eval_app, name="eval")
 
 
 @app.callback()
@@ -62,6 +65,68 @@ def reprocess(
                 payload={"pipeline_version": pipeline_version},
             )
     typer.echo(f"enqueued {stage} for {len(doc_ids)} documents at v{pipeline_version}")
+
+
+@eval_app.command("retrieval")
+def eval_retrieval_cmd(
+    golden: Path = typer.Option(
+        Path("evals/golden.json"), help="path to the golden question set"
+    ),
+    k: int = typer.Option(10, help="chunks/documents to retrieve per question"),
+) -> None:
+    """Score hybrid retrieval against the golden set."""
+    from argus.evals import runner
+    from argus.research.retrieval import STRATEGY_VERSION
+
+    try:
+        golden_set = runner.load_golden(golden)
+    except ValueError as exc:
+        typer.echo(str(exc))
+        raise typer.Exit(1) from exc
+
+    with session_scope() as session:
+        metrics = runner.eval_retrieval(session, golden_set, k=k)
+        if metrics["questions"] == 0:
+            typer.echo(
+                f"all {metrics['skipped']} questions skipped (no matching documents); "
+                "not recording a run"
+            )
+            raise typer.Exit(1)
+        for pq in metrics["per_question"]:
+            typer.echo(f"{pq['id']}  rank={pq['rank'] if pq['rank'] else 'miss'}")
+        typer.echo(
+            f"hit@3={metrics['hit_rate_at_3']:.2f} hit@{k}={metrics['hit_rate_at_k']:.2f} "
+            f"mrr={metrics['mrr']:.2f} skipped={metrics['skipped']}"
+        )
+        runner.record_run(
+            session, "retrieval", metrics, golden_set["version"], STRATEGY_VERSION
+        )
+
+
+@eval_app.command("investigation")
+def eval_investigation_cmd() -> None:
+    """Score citation coverage and stance balance across the latest report of every
+    investigation that has one."""
+    from argus.evals import runner
+
+    with session_scope() as session:
+        metrics = runner.eval_investigation(session)
+        if metrics["reports"] == 0:
+            typer.echo("no reports found; nothing to evaluate")
+            raise typer.Exit(1)
+        for pi in metrics["per_investigation"]:
+            typer.echo(
+                f"{pi['id']}  citations={pi['citation_count']} "
+                f"coverage={pi['citation_coverage']:.2f} both_stances={pi['has_both_stances']}"
+            )
+        typer.echo(
+            f"mean_coverage={metrics['mean_citation_coverage']:.2f} "
+            f"both_stances_fraction={metrics['both_stances_fraction']:.2f} "
+            f"mean_unknown_fraction={metrics['mean_unknown_fraction']:.2f}"
+        )
+        runner.record_run(
+            session, "investigation", metrics, None, runner.INVESTIGATION_EVAL_VERSION
+        )
 
 
 if __name__ == "__main__":
