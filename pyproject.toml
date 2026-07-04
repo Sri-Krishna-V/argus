@@ -6,11 +6,17 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "alembic>=1.13",
+    "beautifulsoup4>=4.15.0",
+    "fastembed>=0.8.0",
+    "feedparser>=6.0.12",
+    "httpx>=0.28.1",
+    "lxml>=6.1.1",
     "pgvector>=0.4.2",
     "psycopg[binary]>=3.1",
     "pydantic>=2.7",
     "pydantic-settings>=2.2",
     "sqlalchemy>=2.0",
+    "typer>=0.26.8",
 ]
 
 [dependency-groups]
@@ -19,6 +25,9 @@ dev = [
     "pytest>=8.0",
     "ruff>=0.4",
 ]
+
+[project.scripts]
+argus = "argus.cli:app"
 
 [build-system]
 requires = ["hatchling"]
@@ -49,8 +58,8 @@ layers = [
     "argus.investigations",
     "argus.agentruntime",
     "argus.research",
-    "argus.knowledge",
     "argus.dataplatform",
+    "argus.knowledge",
     "argus.observability",
     "argus.core",
 ]

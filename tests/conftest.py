@@ -1,3 +1,5 @@
+import os
+
 import pytest
 import sqlalchemy as sa
 from alembic import command
@@ -6,18 +8,39 @@ from alembic.config import Config
 from argus.core.config import get_settings
 
 
-def _db_available() -> bool:
+def _ensure_test_db() -> bool:
+    """Point the whole process at an isolated argus_test database, creating it if
+    needed. Tests wipe schemas (migration round-trip) — they must never touch dev data."""
+    base_url = sa.engine.make_url(get_settings().database_url)
+    if base_url.database == "argus_test":
+        return True
     try:
-        engine = sa.create_engine(
-            get_settings().database_url, connect_args={"connect_timeout": 2}
+        admin = sa.create_engine(
+            base_url.set(database="postgres"),
+            isolation_level="AUTOCOMMIT",
+            connect_args={"connect_timeout": 2},
         )
-        with engine.connect():
-            return True
+        with admin.connect() as conn:
+            exists = conn.execute(
+                sa.text("select 1 from pg_database where datname = 'argus_test'")
+            ).scalar()
+            if not exists:
+                conn.execute(sa.text("create database argus_test"))
     except Exception:
         return False
 
+    os.environ["ARGUS_DATABASE_URL"] = base_url.set(database="argus_test").render_as_string(
+        hide_password=False
+    )
+    get_settings.cache_clear()
+    import argus.core.db as db
 
-DB_AVAILABLE = _db_available()
+    db._engine = None
+    db._session_factory = None
+    return True
+
+
+DB_AVAILABLE = _ensure_test_db()
 
 requires_db = pytest.mark.skipif(not DB_AVAILABLE, reason="Postgres not running (make up)")
 

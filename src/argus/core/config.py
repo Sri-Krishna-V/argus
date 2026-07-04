@@ -11,6 +11,25 @@ class Settings(BaseSettings):
     raw_store_path: Path = Path("data/raw")
     log_level: str = "INFO"
 
+    pipeline_version: int = 1
+    embedding_provider: str = "fastembed"  # or "fake" (tests)
+
+    # SEC asks for a descriptive User-Agent with contact info on every request
+    sec_user_agent: str = "Argus Research Platform srikrishna.vundavalli@gmail.com"
+    sec_watchlist: list[str] = ["AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSM", "AVGO"]
+    sec_filing_types: list[str] = ["10-K", "10-Q", "8-K"]
+    rss_feeds: list[str] = [
+        "https://feeds.content.dowjones.io/public/rss/mw_topstories",
+        "https://www.cnbc.com/id/100003114/device/rss/rss.html",
+        "https://finance.yahoo.com/news/rssindex",
+    ]
+
+    # connector schedules, seconds (Bible: RSS 15m, SEC hourly, profiles daily)
+    schedule_rss: int = 900
+    schedule_sec: int = 3600
+    schedule_profiles: int = 86400
+    worker_poll_seconds: float = 2.0
+
 
 @lru_cache
 def get_settings() -> Settings:

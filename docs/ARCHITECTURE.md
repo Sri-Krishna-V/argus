@@ -35,7 +35,11 @@ Infrastructure (core/)        Config, database, logging, events, job queue.
 ```
 
 **Layer rule** (Bible §9): higher layers never bypass lower layers, and nothing at or below
-the Research Engine imports AI code. Enforced with `import-linter` in CI, not by convention.
+the Research Engine imports AI code. Enforced with `import-linter`, not by convention.
+One nuance: in *import* terms the Knowledge Platform sits below the Data Platform —
+pipeline stages depend on the knowledge models and repositories they populate, never the
+reverse. The Bible's diagram describes data flow (upward); the import contract describes
+code dependency (downward onto the organization's memory).
 
 ## 3. The AI boundary
 

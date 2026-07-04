@@ -17,7 +17,7 @@ uv run alembic revision -m "..."   # new migration (hand-written, numbered 000N_
 ## Hard rules
 
 - **Layer direction** (enforced by import-linter in pyproject.toml):
-  `ui/api → investigations → agentruntime → research → knowledge → dataplatform → observability → core`.
+  `ui/api → investigations → agentruntime → research → dataplatform → knowledge → observability → core`.
   AI code (ADK/Gemini) exists only in `agentruntime/`; `adapter.py` is the only module that imports ADK.
 - **Documents are immutable.** Never write an UPDATE path for `documents`; derived artifacts
   are keyed on `(document_id, stage, pipeline_version)` and re-derivable from the raw store.
