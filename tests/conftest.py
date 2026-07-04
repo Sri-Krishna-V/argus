@@ -61,3 +61,79 @@ def db_session(migrated_db):
     with session_scope() as session:
         yield session
         session.rollback()
+
+
+@pytest.fixture
+def fake_embeddings(monkeypatch):
+    from argus.dataplatform import embeddings
+
+    monkeypatch.setattr(embeddings, "_provider", embeddings.FakeProvider())
+
+
+@pytest.fixture
+def seeded_companies(db_session):
+    """Canonical test companies. Fake tickers: real ones would land on the SEC watchlist."""
+    from argus.dataplatform import pipeline
+    from argus.knowledge.models import Company
+
+    ids = {}
+    for name, cik, tickers, aliases in [
+        ("NVIDIA CORP", "9990001", ["ZZZT"], ["NVIDIA"]),
+        ("Apple Inc.", "9990002", ["ZZAP"], ["Apple"]),
+    ]:
+        company = db_session.scalar(sa.select(Company).where(Company.cik == cik))
+        if company is None:
+            company = Company(name=name, cik=cik, tickers=tickers, aliases=aliases)
+            db_session.add(company)
+            db_session.flush()
+        ids[name] = company.id
+    db_session.commit()
+    pipeline._matcher = None  # matcher caches the canonical table per process
+    return ids
+
+
+class StubConnector:
+    name = "test_stub"
+
+    def __init__(self, html: str, native_id: str):
+        self.html, self.native_id = html, native_id
+
+    def discover(self):
+        from argus.dataplatform.connectors.base import DocumentRef
+
+        return [
+            DocumentRef(
+                source="test_stub",
+                native_id=self.native_id,
+                doc_type="news",
+                title="stub document",
+                url="https://example.com/stub",
+                inline_content=self.html.encode(),
+            )
+        ]
+
+
+def ingest_html(html: str):
+    """Ingest one stub document; returns its document id."""
+    import uuid
+
+    from argus.core.db import session_scope
+    from argus.dataplatform.connectors.base import ingest
+    from argus.knowledge.models import Document
+
+    native_id = str(uuid.uuid4())
+    with session_scope() as session:
+        assert ingest(session, StubConnector(html, native_id))["new"] == 1
+        return session.scalar(
+            sa.select(Document.id).where(Document.source_native_id == native_id)
+        )
+
+
+def drain_queue(limit: int = 200) -> int:
+    from argus.dataplatform.worker import run_once
+
+    ran = 0
+    while run_once():
+        ran += 1
+        assert ran < limit, "queue did not drain"
+    return ran

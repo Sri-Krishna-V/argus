@@ -2,21 +2,18 @@
 worker, producing chunks, embeddings, mentions, events, and pipeline_runs; replaying
 a stage converges (idempotency). Requires Postgres (make up)."""
 
-import uuid
-
 import pytest
 import sqlalchemy as sa
 
 from argus.core import events
 from argus.core.db import session_scope
 from argus.core.models import Event, Job
-from argus.dataplatform import embeddings, pipeline
-from argus.dataplatform.connectors.base import DocumentRef, ingest
-from argus.knowledge.models import Chunk, Company, Document, EntityMention
+from argus.dataplatform import pipeline
+from argus.knowledge.models import Chunk, Document, EntityMention
 from argus.observability.models import PipelineRun
-from tests.conftest import requires_db
+from tests.conftest import drain_queue, ingest_html, requires_db
 
-pytestmark = requires_db
+pytestmark = [requires_db, pytest.mark.usefixtures("fake_embeddings", "seeded_companies")]
 
 HTML = """<html><head><title>t</title><script>junk()</script></head><body>
 <h1>Nvidia Corp beats expectations</h1>
@@ -29,64 +26,8 @@ HTML = """<html><head><title>t</title><script>junk()</script></head><body>
 )
 
 
-class StubConnector:
-    name = "test_stub"
-
-    def __init__(self, native_id: str):
-        self.native_id = native_id
-
-    def discover(self) -> list[DocumentRef]:
-        return [
-            DocumentRef(
-                source="test_stub",
-                native_id=self.native_id,
-                doc_type="news",
-                title="Nvidia beats",
-                url="https://example.com/x",
-                inline_content=HTML.encode(),
-            )
-        ]
-
-
-@pytest.fixture(autouse=True)
-def fake_embeddings(monkeypatch):
-    monkeypatch.setattr(embeddings, "_provider", embeddings.FakeProvider())
-
-
-@pytest.fixture(autouse=True)
-def fresh_matcher(db_session):
-    if db_session.scalar(sa.select(Company).where(Company.cik == "9990001")) is None:
-        # fake ticker: a real one would put this test row on the SEC watchlist
-        db_session.add(
-            Company(name="NVIDIA CORP", cik="9990001", tickers=["ZZZT"], aliases=["NVIDIA"])
-        )
-        db_session.commit()
-    pipeline._matcher = None
-
-
-def drain_queue() -> int:
-    from argus.dataplatform.worker import run_once
-
-    ran = 0
-    while run_once():
-        ran += 1
-        assert ran < 50, "queue did not drain"
-    return ran
-
-
-def ingest_fixture_doc() -> uuid.UUID:
-    native_id = str(uuid.uuid4())
-    with session_scope() as session:
-        stats = ingest(session, StubConnector(native_id))
-        assert stats["new"] == 1
-        doc_id = session.scalar(
-            sa.select(Document.id).where(Document.source_native_id == native_id)
-        )
-    return doc_id
-
-
 def test_document_flows_through_full_pipeline(migrated_db):
-    doc_id = ingest_fixture_doc()
+    doc_id = ingest_html(HTML)
     drain_queue()
 
     with session_scope() as session:
@@ -116,7 +57,7 @@ def test_document_flows_through_full_pipeline(migrated_db):
 
 
 def test_stage_replay_is_idempotent(migrated_db):
-    doc_id = ingest_fixture_doc()
+    doc_id = ingest_html(HTML)
     drain_queue()
 
     with session_scope() as session:
@@ -138,7 +79,7 @@ def test_failing_job_retries_then_dead_letters(migrated_db, monkeypatch):
     monkeypatch.setitem(pipeline._HANDLERS, "parse", boom)
     monkeypatch.setattr(events, "retry_at", lambda attempts: events.datetime.now(events.UTC))
 
-    doc_id = ingest_fixture_doc()
+    doc_id = ingest_html(HTML)
     for _ in range(3):
         assert worker.run_once()
 

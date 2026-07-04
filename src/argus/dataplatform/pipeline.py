@@ -20,7 +20,10 @@ from argus.knowledge.models import Chunk, Company, Document, DocumentCompany, En
 
 log = logging.getLogger(__name__)
 
-STAGES = ["parse", "extract_metadata", "extract_entities", "chunk", "embed", "validate"]
+STAGES = [
+    "parse", "extract_metadata", "extract_entities", "chunk", "embed",
+    "build_graph", "validate",
+]
 _NEXT = dict(zip(STAGES, STAGES[1:] + [None], strict=True))
 _EVENT = {
     "parse": "document.parsed",
@@ -28,6 +31,7 @@ _EVENT = {
     "extract_entities": "document.entities_extracted",
     "chunk": "document.chunked",
     "embed": "document.embedded",
+    "build_graph": "document.graph_built",
     "validate": "document.enriched",
 }
 
@@ -194,11 +198,18 @@ def _validate(session: Session, doc: Document, version: int) -> dict:
     return {"chunks": n_chunks}
 
 
+def _build_graph(session: Session, doc: Document, version: int) -> dict:
+    from argus.knowledge.graph import build_for_document
+
+    return build_for_document(session, doc.id, version)
+
+
 _HANDLERS = {
     "parse": _parse,
     "extract_metadata": _extract_metadata,
     "extract_entities": _extract_entities,
     "chunk": _chunk,
     "embed": _embed,
+    "build_graph": _build_graph,
     "validate": _validate,
 }
