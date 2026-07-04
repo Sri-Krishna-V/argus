@@ -362,6 +362,30 @@ def test_investigation_api_lifecycle(client, monkeypatch, corpus):
     assert results and results[0]["strategy"] == "hybrid-rrf/v1"
 
 
+def test_pipeline_metrics_edge_cases(client):
+    from argus.core import events
+    from argus.core.models import Job
+    from argus.observability.models import PipelineRun
+
+    drain_queue()  # no claimable jobs should remain from earlier tests
+    baseline = client.get("/api/metrics/pipeline").json()
+    assert baseline["oldest_pending_seconds"] is None
+
+    with session_scope() as session:
+        events.enqueue(
+            session, "reembed", run_after=datetime.now(UTC) - timedelta(seconds=30)
+        )
+        session.add(PipelineRun(stage="embed", status="failure", duration_ms=1, attempt=2))
+
+    metrics = client.get("/api/metrics/pipeline").json()
+    assert metrics["oldest_pending_seconds"] is not None
+    assert metrics["oldest_pending_seconds"] > 0
+    assert metrics["retries_24h"] == baseline["retries_24h"] + 1
+
+    with session_scope() as session:
+        session.execute(sa.delete(Job).where(Job.job_type == "reembed"))
+
+
 def test_report_404_before_run(client, corpus):
     with session_scope() as session:
         inv_id = engine.create(session, "q?").id

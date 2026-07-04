@@ -218,7 +218,20 @@ def pipeline_metrics(session: Session = Depends(get_db)) -> dict:
     queue = dict(
         session.execute(select(Job.status, func.count()).group_by(Job.status)).all()
     )
+    # only jobs already runnable — backoff-scheduled jobs would yield a negative age
+    now = datetime.now(UTC)
+    oldest_run_after = session.scalar(
+        select(func.min(Job.run_after)).where(Job.status == "pending", Job.run_after <= now)
+    )
+    oldest_pending_seconds = (
+        None if oldest_run_after is None else (now - oldest_run_after).total_seconds()
+    )
     since = datetime.now(UTC) - timedelta(hours=24)
+    retries_24h = session.scalar(
+        select(func.count())
+        .select_from(PipelineRun)
+        .where(PipelineRun.created_at >= since, PipelineRun.attempt > 1)
+    )
     stages = [
         {
             "stage": stage, "status": status, "runs": runs,
@@ -234,4 +247,9 @@ def pipeline_metrics(session: Session = Depends(get_db)) -> dict:
             .order_by(PipelineRun.stage)
         ).all()
     ]
-    return {"queue_depth": queue, "stages_24h": stages}
+    return {
+        "queue_depth": queue,
+        "stages_24h": stages,
+        "oldest_pending_seconds": oldest_pending_seconds,
+        "retries_24h": retries_24h,
+    }

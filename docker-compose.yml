@@ -15,5 +15,34 @@ services:
       timeout: 2s
       retries: 15
 
+  api:
+    build: .
+    profiles: ["app"]
+    ports: ["8000:8000"]
+    environment:
+      ARGUS_DATABASE_URL: postgresql+psycopg://argus:argus@postgres:5432/argus
+    env_file:
+      - path: .env
+        required: false
+    volumes: ["./data:/app/data"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  worker:
+    build: .
+    profiles: ["app"]
+    command: ["argus", "worker"]
+    environment:
+      ARGUS_DATABASE_URL: postgresql+psycopg://argus:argus@postgres:5432/argus
+    env_file:
+      - path: .env
+        required: false
+    volumes: ["./data:/app/data", "hf_cache:/home/app/.cache"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
 volumes:
   pgdata:
+  hf_cache:
