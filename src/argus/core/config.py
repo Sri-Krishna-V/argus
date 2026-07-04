@@ -11,6 +11,9 @@ class Settings(BaseSettings):
     raw_store_path: Path = Path("data/raw")
     log_level: str = "INFO"
 
+    # when set, /api/* requires X-API-Key or Bearer token; empty disables auth (dev default)
+    api_key: str = ""
+
     pipeline_version: int = 1
     embedding_provider: str = "fastembed"  # or "fake" (tests)
 

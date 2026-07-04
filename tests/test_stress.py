@@ -191,15 +191,15 @@ def test_api_garbage_inputs(fake_embeddings):
     r = client.get(f"/api/documents/{uuid.uuid4()}")
     assert r.status_code == 404
 
+    # k is bounded (ge=1, le=100) at the API layer: out-of-range is a 422, not a 500
     r = client.get("/api/search", params={"q": "", "k": -1})
-    assert r.status_code < 500
+    assert r.status_code == 422
 
     r = client.get("/api/search", params={"q": "anything", "k": 0})
-    assert r.status_code < 500
-    assert r.json() == []
+    assert r.status_code == 422
 
     r = client.get("/api/search", params={"q": "x" * 5000, "k": 500})
-    assert r.status_code < 500
+    assert r.status_code == 422
 
 
 @requires_db

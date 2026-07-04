@@ -1,9 +1,9 @@
 """Phase 8: eval harness — golden-set retrieval scoring, investigation report-quality
 scoring, and the CLI surface. Requires Postgres.
 
-Ordering note: this module must run before tests/test_investigations.py (alphabetical
-collection order already guarantees "test_evals" < "test_investigations") so the
-"no reports yet" case has a genuinely empty reports table."""
+eval_investigation() scores across every Report row in the shared test DB, so the
+"no reports yet" and "exactly one report" cases each clear the table themselves
+first rather than relying on collection order relative to other modules."""
 
 import json
 import re
@@ -204,10 +204,8 @@ def test_cli_retrieval_all_skipped_exits_1_and_records_nothing(tmp_path):
 
 
 def test_cli_investigation_with_no_reports_exits_1_and_records_nothing():
-    # Relies on collection order (see module docstring): no earlier test has run an
-    # investigation yet, so the reports table is genuinely empty.
     with session_scope() as session:
-        assert session.scalar(sa.select(sa.func.count()).select_from(Report)) == 0
+        session.execute(sa.delete(Report))  # other modules' investigations may have run first
         before_runs = session.scalar(sa.select(sa.func.count()).select_from(EvalRun))
 
     result = CliRunner().invoke(app, ["eval", "investigation"])
@@ -278,6 +276,7 @@ def test_eval_investigation_matches_hand_computed_metrics(monkeypatch):
     monkeypatch.setattr("argus.agentruntime.adapter.run_structured", fake_run_structured)
 
     with session_scope() as session:
+        session.execute(sa.delete(Report))  # isolate: score exactly this test's report
         inv_id = engine.create(session, "How is NVIDIA doing?").id
     with session_scope() as session:
         engine.run(session, inv_id)

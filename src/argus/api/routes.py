@@ -4,7 +4,8 @@ ponytail: one router module; split per-resource when it outgrows a screenful."""
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -36,6 +37,15 @@ def health(session: Session = Depends(get_db)) -> dict:
     return {"status": "ok"}
 
 
+@router.get("/health/ready")
+def health_ready(session: Session = Depends(get_db)):
+    try:
+        session.execute(select(1))
+    except Exception:
+        return JSONResponse({"status": "unavailable"}, status_code=503)
+    return {"status": "ready"}
+
+
 # --- search / knowledge ---
 
 
@@ -44,7 +54,7 @@ def api_search(
     q: str,
     company_id: uuid.UUID | None = None,
     doc_type: str | None = None,
-    k: int = 10,
+    k: int = Query(10, ge=1, le=100),
     session: Session = Depends(get_db),
 ) -> list[dict]:
     filters = SearchFilters(company_id=company_id, doc_types=[doc_type] if doc_type else None)
@@ -52,7 +62,9 @@ def api_search(
 
 
 @router.get("/api/companies")
-def api_companies(q: str, limit: int = 20, session: Session = Depends(get_db)) -> list[dict]:
+def api_companies(
+    q: str, limit: int = Query(20, ge=1, le=200), session: Session = Depends(get_db)
+) -> list[dict]:
     rows = session.scalars(
         select(Company).where(Company.name.ilike(f"%{q}%")).limit(limit)
     ).all()
@@ -113,9 +125,16 @@ def create_investigation(body: CreateInvestigation) -> dict:
 
 
 @router.get("/api/investigations")
-def list_investigations(session: Session = Depends(get_db)) -> list[dict]:
+def list_investigations(
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    session: Session = Depends(get_db),
+) -> list[dict]:
     rows = session.scalars(
-        select(Investigation).order_by(Investigation.created_at.desc())
+        select(Investigation)
+        .order_by(Investigation.created_at.desc(), Investigation.id.desc())
+        .limit(limit)
+        .offset(offset)
     ).all()
     return [_investigation_json(session, inv) for inv in rows]
 
@@ -136,11 +155,18 @@ def get_investigation(
 
 @router.get("/api/investigations/{investigation_id}/evidence")
 def get_evidence(
-    investigation_id: uuid.UUID, session: Session = Depends(get_db)
+    investigation_id: uuid.UUID,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    session: Session = Depends(get_db),
 ) -> list[dict]:
     _get_or_404(session, investigation_id)
     rows = session.scalars(
-        select(Evidence).where(Evidence.investigation_id == investigation_id)
+        select(Evidence)
+        .where(Evidence.investigation_id == investigation_id)
+        .order_by(Evidence.id)
+        .limit(limit)
+        .offset(offset)
     ).all()
     return [
         {
