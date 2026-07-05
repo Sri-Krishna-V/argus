@@ -52,6 +52,45 @@ def worker() -> None:
 
 
 @app.command()
+def status() -> None:
+    """One-screen ops snapshot: job queue, dead jobs, documents, recent pipeline runs."""
+    from sqlalchemy import func, select
+
+    from argus.core.models import Job
+    from argus.knowledge.models import Document
+    from argus.observability.models import PipelineRun
+
+    with session_scope() as session:
+        queue = dict(
+            session.execute(select(Job.status, func.count()).group_by(Job.status)).all()
+        )
+        dead_count = queue.get("dead", 0)
+        doc_count = session.scalar(select(func.count()).select_from(Document))
+        recent = session.scalars(
+            select(PipelineRun).order_by(PipelineRun.created_at.desc()).limit(10)
+        ).all()
+
+    queue_style = "err" if dead_count else "ok"
+    console.print(
+        "[accent]queue[/accent]  " + " ".join(f"{k}={v}" for k, v in sorted(queue.items()))
+        + f"  [{queue_style}]dead={dead_count}[/{queue_style}]"
+    )
+    console.print(f"[accent]documents[/accent]  {doc_count}")
+
+    table = Table(title="Recent pipeline runs")
+    table.add_column("stage")
+    table.add_column("status")
+    table.add_column("duration (ms)", justify="right")
+    table.add_column("attempt", justify="right")
+    for run in recent:
+        style = "ok" if run.status == "success" else "err"
+        table.add_row(
+            run.stage, f"[{style}]{run.status}[/{style}]", str(run.duration_ms), str(run.attempt)
+        )
+    console.print(table)
+
+
+@app.command()
 def ingest(connector: str) -> None:
     """Run one connector pass now (company_profiles | sec_edgar | rss)."""
     from argus.dataplatform.worker import CONNECTORS, run_connector_pass

@@ -69,3 +69,13 @@ def test_eval_investigation_no_reports_is_a_clean_message():
     result = runner.invoke(cli.app, ["eval", "investigation"])
     assert result.exit_code == 1
     assert "no reports found" in result.output
+
+
+@requires_db
+def test_status_shows_queue_and_document_counts():
+    from argus import cli
+
+    result = runner.invoke(cli.app, ["status"])
+    assert result.exit_code == 0
+    assert "documents" in result.output.lower()
+    assert "queue" in result.output.lower()
