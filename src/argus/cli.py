@@ -49,7 +49,10 @@ def ingest(connector: str) -> None:
 
     if connector not in CONNECTORS:
         raise typer.BadParameter(f"unknown connector; choose from {sorted(CONNECTORS)}")
-    typer.echo(run_connector_pass(connector))
+    with console.status(f"[accent]running {connector}...[/accent]"):
+        stats = run_connector_pass(connector)
+    style = "err" if stats.get("failed") else "ok"
+    console.print(f"[{style}]{connector}[/{style}] {stats}")
 
 
 @app.command()
