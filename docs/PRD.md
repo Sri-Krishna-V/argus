@@ -203,47 +203,16 @@ Chat conversations are not.
 
 A typical investigation follows the lifecycle below.
 
-Research Question
+```mermaid
+flowchart TD
+    A["Research Question"] --> B["Investigation Created"] --> C["Research Planning"] --> D["Knowledge Retrieval"] --> E["Evidence Collection"] --> F["Relationship Discovery"] --> G["Contradiction Analysis"] --> H["Report Generation"] --> I["Human Review"] --> J["Investigation Saved"] --> K["Continuous Updates"]
 
-↓
+    classDef n fill:#ccfbf1,stroke:#0f766e,color:#134e4a;
+    class A,B,C,D,E,F,G,H,I,J,K n
+```
 
-Investigation Created
-
-↓
-
-Research Planning
-
-↓
-
-Knowledge Retrieval
-
-↓
-
-Evidence Collection
-
-↓
-
-Relationship Discovery
-
-↓
-
-Contradiction Analysis
-
-↓
-
-Report Generation
-
-↓
-
-Human Review
-
-↓
-
-Investigation Saved
-
-↓
-
-Continuous Updates
+See [ARCHITECTURE.md's investigation lifecycle diagram](ARCHITECTURE.md#3-the-ai-boundary)
+for how this maps to the as-built implementation.
 
 ---
 

@@ -1,9 +1,39 @@
 # Argus Architecture
 
 Governing document: [DESIGN_BIBLE.md](DESIGN_BIBLE.md). Product scope: [PRD.md](PRD.md).
-Decisions and their tradeoffs live in [adr/](adr/). This document describes the system as built.
+Schema shape: [DOMAIN_MODEL.md](DOMAIN_MODEL.md). Decisions and their tradeoffs live in
+[adr/](adr/). New to the codebase? Start with [ONBOARDING.md](ONBOARDING.md) instead — this
+document describes the system as built, in depth.
 
 ---
+
+## System context
+
+```mermaid
+flowchart LR
+    analyst(["Research analyst"])
+    sec[["SEC EDGAR"]]
+    rss[["News / RSS sources"]]
+    llm[["OpenRouter\n(LLM access)"]]
+    argus(("Argus"))
+    pg[("Postgres 16\n+ pgvector")]
+
+    analyst -- "asks research questions\nreviews reports" --> argus
+    sec -- "filings" --> argus
+    rss -- "articles" --> argus
+    argus -- "planning / stance / drafting calls" --> llm
+    argus <--> pg
+
+    style argus fill:#e0e7ff,stroke:#4338ca,color:#312e81
+    style pg fill:#e2e8f0,stroke:#475569,color:#1e293b
+    style llm fill:#ffedd5,stroke:#c2410c,color:#7c2d12
+    style sec fill:#dbeafe,stroke:#1d4ed8,color:#1e3a8a
+    style rss fill:#dbeafe,stroke:#1d4ed8,color:#1e3a8a
+```
+
+Argus sits between public sources and an analyst: it pulls filings and news in on a schedule,
+stores everything in one Postgres instance, calls out to an LLM only for planning/drafting
+(never for storage or retrieval), and hands back reports the analyst reviews.
 
 ## 1. Architecture style
 
@@ -13,25 +43,35 @@ through in-process interfaces. Enterprise modularity without distributed-systems
 
 ## 2. Layers
 
-```
-Presentation (ui/)            Jinja2 + HTMX investigation workspace, dashboards
-        ↓
-Research Platform             Investigations: hypotheses, evidence, reports,
-(investigations/, api/)       confidence, versioning, replay records
-        ↓
-Agent Runtime (agentruntime/) Planning, stance classification, report drafting.
-                              Google ADK behind an adapter. The ONLY layer with AI.
-        ↓
-Research Engine (research/)   Hybrid retrieval, ranking, timelines, contradiction
-                              grouping, citation assembly. Deterministic.
-        ↓
-Knowledge Platform            Canonical entities, entity resolution, knowledge
-(knowledge/)                  graph, search indexes, versioning. Deterministic.
-        ↓
-Data Platform (dataplatform/) Connectors, scheduling, parsing, metadata, entity
-                              extraction, chunking, embeddings, validation.
-        ↓
-Infrastructure (core/)        Config, database, logging, events, job queue.
+```mermaid
+flowchart TD
+    A["ui/ + api/\nPresentation & JSON API"]
+    B["investigations/\nHypotheses, evidence, reports, confidence, replay"]
+    C["agentruntime/\nPlanning, stance, drafting — the ONLY layer with AI"]
+    D["research/\nHybrid retrieval, ranking, timelines, citations — deterministic"]
+    E["dataplatform/\nConnectors, parsing, chunking, embeddings — deterministic"]
+    F["knowledge/\nCanonical entities, resolution, knowledge graph — deterministic"]
+    G["observability/\nPipeline run tracking, metrics"]
+    H["core/\nConfig, DB session, logging, events, job queue"]
+
+    A -->|imports| B -->|imports| C -->|imports| D -->|imports| E -->|imports| F -->|imports| G -->|imports| H
+
+    classDef apiui fill:#e0e7ff,stroke:#4338ca,color:#312e81;
+    classDef investigations fill:#ccfbf1,stroke:#0f766e,color:#134e4a;
+    classDef agentruntime fill:#ffedd5,stroke:#c2410c,color:#7c2d12;
+    classDef research fill:#ede9fe,stroke:#6d28d9,color:#4c1d95;
+    classDef dataplatform fill:#dbeafe,stroke:#1d4ed8,color:#1e3a8a;
+    classDef knowledge fill:#dcfce7,stroke:#15803d,color:#14532d;
+    classDef observability fill:#cffafe,stroke:#0e7490,color:#164e63;
+    classDef core fill:#e2e8f0,stroke:#475569,color:#1e293b;
+    class A apiui
+    class B investigations
+    class C agentruntime
+    class D research
+    class E dataplatform
+    class F knowledge
+    class G observability
+    class H core
 ```
 
 **Layer rule** (Bible §9): higher layers never bypass lower layers, and nothing at or below
@@ -52,6 +92,38 @@ them. Agents consume the knowledge platform through the Research Engine's typed 
 and must attach chunk-level citations to every piece of evidence; uncited evidence is
 rejected at the boundary ([ADR-0005](adr/0005-evidence-first-ai-boundary.md)).
 
+### Investigation lifecycle
+
+How a question becomes a cited, confidence-scored report (`investigations/engine.py`):
+
+```mermaid
+flowchart TD
+    q(["Question"]):::investigations
+    create["engine.create()\npersists Investigation + Hypothesis"]:::investigations
+    plan["planner.plan()\nLLM call via agentruntime/adapter.py"]:::agentruntime
+    resolve["resolve_companies()\nplan companies → canonical Company IDs"]:::knowledge
+    retrieve["research.retrieval.search()\nhybrid FTS + pgvector, per query"]:::research
+    stance["evidence.collect()\nLLM stance classification, batched"]:::agentruntime
+    save_ev["Evidence rows saved\n(chunk FK = citation guarantee)"]:::investigations
+    draft["drafter.draft()\nLLM call, must cite [chunk:&lt;uuid&gt;]"]:::agentruntime
+    gate{"Citation gate:\nevery cited chunk in\ncollected evidence?"}:::investigations
+    reject["Run rejected\n(no invented citations)"]:::investigations
+    confidence["confidence.compute()\ndeterministic, never LLM-generated"]:::knowledge
+    report[("Report saved\n(new version, immutable)")]:::investigations
+
+    q --> create --> plan --> resolve --> retrieve --> stance --> save_ev --> draft --> gate
+    gate -->|no| reject
+    gate -->|yes| confidence --> report
+
+    classDef investigations fill:#ccfbf1,stroke:#0f766e,color:#134e4a;
+    classDef agentruntime fill:#ffedd5,stroke:#c2410c,color:#7c2d12;
+    classDef research fill:#ede9fe,stroke:#6d28d9,color:#4c1d95;
+    classDef knowledge fill:#dcfce7,stroke:#15803d,color:#14532d;
+```
+
+Orange steps are the only ones that call an LLM; everything else — retrieval, the citation
+gate, and the confidence score — is deterministic and auditable.
+
 ## 4. Storage
 
 One Postgres 16 instance serves every layer ([ADR-0002](adr/0002-postgres-for-everything.md)):
@@ -69,12 +141,29 @@ Each choice has a named upgrade path recorded in its ADR; the repository interfa
 storage so a swap (pgvector → dedicated vector DB, outbox → Kafka, CTEs → Neo4j) does not
 ripple upward. This is how the design answers the Bible's 100-million-document test (§19).
 
+Full entity-relationship shape of the schema (documents, chunks, companies, events, jobs,
+investigations, evidence, reports, …) lives in [DOMAIN_MODEL.md](DOMAIN_MODEL.md) — this
+section covers the storage mechanisms, that one covers the object shapes.
+
 ### Storage layers (Bible §14)
 
-Raw → Parsed → Enriched → Search → Knowledge. Raw documents are permanent and never
-modified; every derived artifact (chunks, embeddings, entities, edges) references its
-source document, pipeline version, and timestamp, and can be re-derived at any time via
-`argus reprocess` without re-downloading.
+```mermaid
+flowchart LR
+    raw["Raw\n(content-addressed bytes,\nnever modified)"]
+    parsed["Parsed\n(plain text)"]
+    enriched["Enriched\n(entities, chunks, embeddings)"]
+    search["Search\n(FTS + pgvector indexes)"]
+    knowledge["Knowledge\n(canonical entities + graph)"]
+
+    raw --> parsed --> enriched --> search --> knowledge
+
+    classDef s fill:#dbeafe,stroke:#1d4ed8,color:#1e3a8a;
+    class raw,parsed,enriched,search,knowledge s
+```
+
+Raw documents are permanent and never modified; every derived artifact (chunks, embeddings,
+entities, edges) references its source document, pipeline version, and timestamp, and can be
+re-derived at any time via `argus reprocess` without re-downloading.
 
 ## 5. Event-driven ingestion
 
@@ -85,18 +174,43 @@ pattern) and claimed by the worker with `FOR UPDATE SKIP LOCKED`. Events are ret
 forever, so every pipeline run is replayable. Stages are idempotent, keyed on
 `(document_id, stage, pipeline_version)`.
 
-```
-Connector → raw store + documents row + event
-                                        └→ job → parse → metadata → extract_entities
-                                                  → chunk → embed → validate
-                                                  (each stage: event + pipeline_runs row)
+```mermaid
+flowchart TD
+    conn["Connector\nrss / sec / profiles"]:::dataplatform
+    ingest["ingest()\ndedupe, write raw bytes,\ninsert documents row"]:::dataplatform
+    evt1[("events\nappend-only")]:::core
+    job1[("jobs\noutbox, SKIP LOCKED")]:::core
+    claim["Worker.claim_next()\nFOR UPDATE SKIP LOCKED"]:::core
+
+    subgraph stages ["Pipeline stages — idempotent per (document_id, stage, pipeline_version)"]
+        direction LR
+        s1["parse"]:::dataplatform --> s2["extract_metadata"]:::dataplatform --> s3["extract_entities"]:::dataplatform --> s4["chunk"]:::dataplatform --> s5["embed"]:::dataplatform --> s6["build_graph"]:::dataplatform --> s7["validate"]:::dataplatform
+    end
+
+    run[("pipeline_runs\n1 row per attempt")]:::observability
+    reaper{{"reap_stale():\nclaimed_at older than\nARGUS_JOB_LEASE_SECONDS?"}}:::core
+    dead{{"attempts ≥\nmax_attempts?"}}:::core
+    deadrow["status = dead\njob.dead event"]:::core
+
+    conn --> ingest --> evt1 --> job1 --> claim --> stages
+    stages -.->|"each stage: emit event\n+ enqueue next job"| evt1
+    claim --> run
+    claim --> reaper
+    reaper -->|yes: requeue| job1
+    claim --> dead
+    dead -->|yes| deadrow
+    dead -->|no: backoff| job1
+
+    classDef dataplatform fill:#dbeafe,stroke:#1d4ed8,color:#1e3a8a;
+    classDef core fill:#e2e8f0,stroke:#475569,color:#1e293b;
+    classDef observability fill:#cffafe,stroke:#0e7490,color:#164e63;
 ```
 
-Crash recovery: each claimed job carries a lease; a reaper (`reap_stale` in
-`dataplatform/worker.py`) re-queues jobs stuck `running` past `ARGUS_JOB_LEASE_SECONDS`
-(default 600), since stages are idempotent and safe to re-run. Jobs that exhaust
-`max_attempts` dead-letter (`status='dead'`, `job.dead` event) instead of retrying forever;
-dead jobs are visible on the pipeline dashboard and requeued with `argus retry-dead`.
+Crash recovery: each claimed job carries a lease; the reaper re-queues jobs stuck `running`
+past `ARGUS_JOB_LEASE_SECONDS` (default 600), since stages are idempotent and safe to re-run.
+Jobs that exhaust `max_attempts` dead-letter (`status='dead'`, `job.dead` event) instead of
+retrying forever; dead jobs are visible on the pipeline dashboard and requeued with
+`argus retry-dead`.
 
 ## 6. Reproducibility
 
@@ -127,6 +241,35 @@ is content-addressed so no external string ever becomes a filesystem path. Citat
 structurally validated against retrieved chunks and confidence is computed, which is the
 real prompt-injection defense (RISKS.md #8). TLS terminates at a reverse proxy. Every
 knob is an `ARGUS_` setting documented in `.env.example`.
+
+```mermaid
+flowchart LR
+    req(["Request"]):::apiui
+    rid["request_id middleware\nX-Request-ID echoed/generated"]:::apiui
+    auth{"ARGUS_API_KEY set?"}:::apiui
+    key{"X-API-Key /\nBearer matches?\n(constant-time compare)"}:::apiui
+    size{"Content-Length ≤\nARGUS_MAX_BODY_BYTES?"}:::apiui
+    rate{"rate limit ok?\n(investigation creates only)"}:::apiui
+    handler["Route handler"]:::apiui
+    headers["Security headers applied\nCSP, X-Frame-Options, …"]:::apiui
+    resp(["Response"]):::apiui
+    reject401["401"]:::core
+    reject413["413"]:::core
+    reject429["429"]:::core
+
+    req --> rid --> auth
+    auth -->|no| size
+    auth -->|yes| key
+    key -->|no| reject401
+    key -->|yes| size
+    size -->|no| reject413
+    size -->|yes| rate
+    rate -->|no| reject429
+    rate -->|yes| handler --> headers --> resp
+
+    classDef apiui fill:#e0e7ff,stroke:#4338ca,color:#312e81;
+    classDef core fill:#e2e8f0,stroke:#475569,color:#1e293b;
+```
 
 ## 9. Module map
 

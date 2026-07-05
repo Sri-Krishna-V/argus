@@ -121,31 +121,30 @@ Every module should have clear ownership and responsibilities.
 
 Argus follows a layered architecture.
 
-Presentation Layer
+```mermaid
+flowchart TD
+    A["Presentation Layer"]:::apiui
+    B["Research Platform"]:::investigations
+    C["Agent Runtime"]:::agentruntime
+    D["Research Engine"]:::research
+    E["Knowledge Platform"]:::knowledge
+    F["Data Platform"]:::dataplatform
+    G["Infrastructure"]:::core
 
-↓
+    A --> B --> C --> D --> E --> F --> G
 
-Research Platform
+    classDef apiui fill:#e0e7ff,stroke:#4338ca,color:#312e81;
+    classDef investigations fill:#ccfbf1,stroke:#0f766e,color:#134e4a;
+    classDef agentruntime fill:#ffedd5,stroke:#c2410c,color:#7c2d12;
+    classDef research fill:#ede9fe,stroke:#6d28d9,color:#4c1d95;
+    classDef knowledge fill:#dcfce7,stroke:#15803d,color:#14532d;
+    classDef dataplatform fill:#dbeafe,stroke:#1d4ed8,color:#1e3a8a;
+    classDef core fill:#e2e8f0,stroke:#475569,color:#1e293b;
+```
 
-↓
-
-Agent Runtime
-
-↓
-
-Research Engine
-
-↓
-
-Knowledge Platform
-
-↓
-
-Data Platform
-
-↓
-
-Infrastructure
+See [ARCHITECTURE.md §2](ARCHITECTURE.md#2-layers) for how this maps to actual package names
+and the import-direction nuances (as built, one layer differs slightly from this conceptual
+picture).
 
 Each layer communicates through well-defined interfaces.
 

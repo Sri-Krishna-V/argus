@@ -5,6 +5,30 @@ classes live in the owning layer's `models.py`. Two schema-level guards back the
 a trigger rejects mutation of `documents` content columns, and a trigger rejects any
 `UPDATE`/`DELETE` on `events`.
 
+## Entity relationships
+
+```mermaid
+erDiagram
+    documents ||--o{ chunks : "chunked into"
+    documents ||--o{ entity_mentions : "mentions extracted from"
+    documents }o--o{ companies : "document_companies"
+    companies ||--o{ entity_mentions : "resolved to"
+    documents ||--o{ graph_edges : "source_document_id (provenance)"
+    documents ||--o{ graph_nodes : "source_document_id (provenance)"
+    chunks ||--o{ evidence : "cited by"
+    documents ||--o{ evidence : "cited by"
+    events |o--o| jobs : "derives (outbox)"
+    investigations ||--o{ hypotheses : "has"
+    investigations ||--o{ evidence : "collects"
+    investigations ||--o{ reports : "produces versions"
+    investigations ||--o{ investigation_events : "replay trail"
+    hypotheses ||--o{ evidence : "supported/contradicted by"
+```
+
+Relationship-only view — column-level detail is in the object catalog below and in the
+migrations. `events`/`jobs` are infrastructure records (not part of the object catalog) but
+are included here because every derived row above traces back to one.
+
 ## Object catalog
 
 | Object | Owner (layer) | Table(s) | Lifecycle |
