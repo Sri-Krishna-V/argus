@@ -241,7 +241,7 @@ Full detail, including the resolvable citation chain and the confidence formula,
 | Google ADK + LiteLLM via OpenRouter | Agent orchestration + model access | [ADR-0006](docs/adr/0006-openrouter-model-access.md): the model is an `ARGUS_LLM_MODEL` config value, never a code dependency |
 | Events + outbox (no broker) | Ingestion backbone | [ADR-0003](docs/adr/0003-events-and-outbox.md): append-only log + `SKIP LOCKED` outbox instead of Kafka/Redis Streams |
 | HTMX + Jinja2 | Server-rendered workspace UI | Enterprise software, not a chat widget; no SPA build step |
-| Typer | CLI (`argus worker`, `ingest`, `reprocess`, `retry-dead`, `eval`) | The operational surface for running and repairing the pipeline |
+| Typer + rich | CLI (`argus status`, `search`, `worker`, `ingest`, `reprocess`, `retry-dead`, `eval`) | The operational surface for running and repairing the pipeline, with colorized human-facing output |
 | Docker + docker-compose | Containerized stack (`make stack`) | Postgres + API + worker, one profile, reproducible environment |
 | `import-linter` | Layer-boundary enforcement | [ADR-0001](docs/adr/0001-modular-monolith.md): a modular monolith with import direction enforced in tooling, not code review |
 
@@ -282,6 +282,25 @@ make eval      # score retrieval and investigation quality against the golden se
 make backup    # pg_dump + raw-store tarball into backups/
 make restore   # restore from a backup: make restore DB_DUMP=... RAW_TGZ=...
 ```
+
+## CLI usage
+
+`argus --help` lists every command with rich-rendered help. The operational surface:
+
+```bash
+argus status              # one-screen ops snapshot: job queue, dead jobs, documents, recent pipeline runs
+argus search "query" -k 5 # hybrid search from the terminal, results as a table
+argus ingest company_profiles   # run one connector pass now
+argus reprocess --stage parse --pipeline-version 2   # re-derive artifacts, no re-downloading
+argus retry-dead           # requeue dead-lettered jobs
+argus eval retrieval       # score retrieval against evals/golden.json
+argus eval investigation   # score investigation quality
+argus worker               # run the pipeline worker + connector scheduler (plain JSON logs, for machines)
+```
+
+Every command above renders colorized, human-facing output (`rich` tables and themed
+text); `worker` is the one exception — it keeps plain structured JSON logging, since it's
+meant to be read by log aggregators, not a terminal.
 
 ## Status
 
