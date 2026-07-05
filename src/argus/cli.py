@@ -5,6 +5,7 @@ from pathlib import Path
 
 import typer
 from rich.console import Console
+from rich.table import Table
 from rich.theme import Theme
 
 from argus.core.config import get_settings
@@ -19,6 +20,14 @@ THEME = Theme({
     "muted": "dim",
 })
 console = Console(theme=THEME)
+
+
+def _score_style(value: float, good: float, ok: float) -> str:
+    if value >= good:
+        return "ok"
+    if value >= ok:
+        return "warn"
+    return "err"
 
 app = typer.Typer(
     help="[accent]Argus[/accent] — Enterprise Research Operating System",
@@ -143,11 +152,21 @@ def eval_retrieval_cmd(
                 "not recording a run"
             )
             raise typer.Exit(1)
+        table = Table(title="Retrieval eval")
+        table.add_column("question")
+        table.add_column("rank", justify="right")
         for pq in metrics["per_question"]:
-            typer.echo(f"{pq['id']}  rank={pq['rank'] if pq['rank'] else 'miss'}")
-        typer.echo(
-            f"hit@3={metrics['hit_rate_at_3']:.2f} hit@{k}={metrics['hit_rate_at_k']:.2f} "
-            f"mrr={metrics['mrr']:.2f} skipped={metrics['skipped']}"
+            rank = pq["rank"]
+            style = "muted" if rank is None else ("ok" if rank <= 3 else "warn")
+            table.add_row(pq["id"], f"[{style}]{rank if rank else 'miss'}[/{style}]")
+        console.print(table)
+        console.print(
+            f"hit@3=[{_score_style(metrics['hit_rate_at_3'], 0.8, 0.5)}]"
+            f"{metrics['hit_rate_at_3']:.2f}[/] "
+            f"hit@{k}=[{_score_style(metrics['hit_rate_at_k'], 0.8, 0.5)}]"
+            f"{metrics['hit_rate_at_k']:.2f}[/] "
+            f"mrr=[{_score_style(metrics['mrr'], 0.7, 0.4)}]{metrics['mrr']:.2f}[/] "
+            f"skipped={metrics['skipped']}"
         )
         runner.record_run(
             session, "retrieval", metrics, golden_set["version"], STRATEGY_VERSION
@@ -165,13 +184,22 @@ def eval_investigation_cmd() -> None:
         if metrics["reports"] == 0:
             typer.echo("no reports found; nothing to evaluate")
             raise typer.Exit(1)
+        table = Table(title="Investigation eval")
+        table.add_column("investigation")
+        table.add_column("citations", justify="right")
+        table.add_column("coverage", justify="right")
+        table.add_column("both stances", justify="right")
         for pi in metrics["per_investigation"]:
-            typer.echo(
-                f"{pi['id']}  citations={pi['citation_count']} "
-                f"coverage={pi['citation_coverage']:.2f} both_stances={pi['has_both_stances']}"
+            style = _score_style(pi["citation_coverage"], 0.8, 0.5)
+            table.add_row(
+                str(pi["id"]), str(pi["citation_count"]),
+                f"[{style}]{pi['citation_coverage']:.2f}[/{style}]",
+                "yes" if pi["has_both_stances"] else "[muted]no[/muted]",
             )
-        typer.echo(
-            f"mean_coverage={metrics['mean_citation_coverage']:.2f} "
+        console.print(table)
+        console.print(
+            f"mean_coverage=[{_score_style(metrics['mean_citation_coverage'], 0.8, 0.5)}]"
+            f"{metrics['mean_citation_coverage']:.2f}[/] "
             f"both_stances_fraction={metrics['both_stances_fraction']:.2f} "
             f"mean_unknown_fraction={metrics['mean_unknown_fraction']:.2f}"
         )

@@ -1,8 +1,11 @@
 """CLI smoke tests: rich console wiring and the read-only ops commands."""
 
+import sqlalchemy as sa
 from typer.testing import CliRunner
 
 from argus.cli import app, console
+from argus.core.db import session_scope
+from argus.investigations.models import Report
 from tests.conftest import requires_db
 
 runner = CliRunner()
@@ -54,3 +57,15 @@ def test_retry_dead_no_matching_job_reports_zero():
     result = runner.invoke(cli.app, ["retry-dead", "--yes"])
     assert result.exit_code == 0
     assert "retried" in result.output.lower()
+
+
+@requires_db
+def test_eval_investigation_no_reports_is_a_clean_message():
+    from argus import cli
+
+    with session_scope() as session:
+        session.execute(sa.delete(Report))  # other modules' investigations may have run first
+
+    result = runner.invoke(cli.app, ["eval", "investigation"])
+    assert result.exit_code == 1
+    assert "no reports found" in result.output
