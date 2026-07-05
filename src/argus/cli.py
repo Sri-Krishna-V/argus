@@ -4,12 +4,27 @@ import uuid
 from pathlib import Path
 
 import typer
+from rich.console import Console
+from rich.theme import Theme
 
 from argus.core.config import get_settings
 from argus.core.db import session_scope
 from argus.core.logging import configure_logging
 
-app = typer.Typer(help="Argus — Enterprise Research Operating System", no_args_is_help=True)
+THEME = Theme({
+    "ok": "bold green",
+    "warn": "bold yellow",
+    "err": "bold red",
+    "accent": "bold cyan",
+    "muted": "dim",
+})
+console = Console(theme=THEME)
+
+app = typer.Typer(
+    help="[accent]Argus[/accent] — Enterprise Research Operating System",
+    no_args_is_help=True,
+    rich_markup_mode="rich",
+)
 eval_app = typer.Typer(no_args_is_help=True, help="Run evaluation harnesses (Phase 8).")
 app.add_typer(eval_app, name="eval")
 
