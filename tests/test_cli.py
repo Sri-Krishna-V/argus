@@ -1,5 +1,6 @@
 """CLI smoke tests: rich console wiring and the read-only ops commands."""
 
+import pytest
 import sqlalchemy as sa
 from typer.testing import CliRunner
 
@@ -79,3 +80,20 @@ def test_status_shows_queue_and_document_counts():
     assert result.exit_code == 0
     assert "documents" in result.output.lower()
     assert "queue" in result.output.lower()
+
+
+@pytest.mark.usefixtures("fake_embeddings", "seeded_companies")
+@requires_db
+def test_search_finds_ingested_document():
+    from argus import cli
+    from tests.conftest import drain_queue, ingest_html
+
+    ingest_html(
+        "<p>" + "Datacenter GPU demand accelerates. " * 20 + "</p>",
+        source="test_stub", doc_type="news", title="GPU demand story",
+    )
+    drain_queue()
+
+    result = runner.invoke(cli.app, ["search", "datacenter GPU demand"])
+    assert result.exit_code == 0
+    assert "GPU demand story" in result.output

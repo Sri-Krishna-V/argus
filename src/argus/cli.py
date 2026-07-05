@@ -91,6 +91,33 @@ def status() -> None:
 
 
 @app.command()
+def search(
+    query: str,
+    k: int = typer.Option(10, "-k", help="number of results"),
+) -> None:
+    """Hybrid search from the terminal."""
+    from argus.research.retrieval import search as run_search
+
+    with session_scope() as session:
+        results = run_search(session, query, k=k)
+
+    if not results:
+        console.print("[warn]no results[/warn]")
+        raise typer.Exit(0)
+
+    table = Table(title=f"Search: {query!r}")
+    table.add_column("title")
+    table.add_column("type")
+    table.add_column("source")
+    table.add_column("snippet")
+    for r in results:
+        table.add_row(
+            r.title or "[muted]untitled[/muted]", r.doc_type, r.source, r.text[:80] + "…"
+        )
+    console.print(table)
+
+
+@app.command()
 def ingest(connector: str) -> None:
     """Run one connector pass now (company_profiles | sec_edgar | rss)."""
     from argus.dataplatform.worker import CONNECTORS, run_connector_pass
