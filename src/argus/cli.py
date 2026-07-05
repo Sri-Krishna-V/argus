@@ -82,7 +82,10 @@ def reprocess(
                 session, stage, document_id=doc_id,
                 payload={"pipeline_version": pipeline_version},
             )
-    typer.echo(f"enqueued {stage} for {len(doc_ids)} documents at v{pipeline_version}")
+    console.print(
+        f"enqueued [accent]{stage}[/accent] for [ok]{len(doc_ids)}[/ok] documents "
+        f"at v{pipeline_version}"
+    )
 
 
 @app.command("retry-dead")
@@ -101,7 +104,7 @@ def retry_dead(
         if job_id is not None:
             job = session.get(Job, job_id)
             if job is None or job.status != "dead":
-                typer.echo(f"no dead job with id {job_id}")
+                console.print(f"[warn]no dead job with id {job_id}[/warn]")
                 raise typer.Exit(1)
             stmt = update(Job).where(Job.id == job_id)
         else:
@@ -111,7 +114,8 @@ def retry_dead(
         result = session.execute(
             stmt.values(status="pending", attempts=0, run_after=datetime.now(UTC))
         )
-        typer.echo(f"retried {result.rowcount} job(s)")
+        style = "ok" if result.rowcount else "muted"
+        console.print(f"retried [{style}]{result.rowcount}[/{style}] job(s)")
 
 
 @eval_app.command("retrieval")
