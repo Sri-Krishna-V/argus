@@ -10,33 +10,44 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as InvestigationsInvestigationIdRouteImport } from './routes/investigations.$investigationId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const InvestigationsInvestigationIdRoute =
+  InvestigationsInvestigationIdRouteImport.update({
+    id: '/investigations/$investigationId',
+    path: '/investigations/$investigationId',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/investigations/$investigationId': typeof InvestigationsInvestigationIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/investigations/$investigationId': typeof InvestigationsInvestigationIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/investigations/$investigationId': typeof InvestigationsInvestigationIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths: '/' | '/investigations/$investigationId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to: '/' | '/investigations/$investigationId'
+  id: '__root__' | '/' | '/investigations/$investigationId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  InvestigationsInvestigationIdRoute: typeof InvestigationsInvestigationIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -48,11 +59,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/investigations/$investigationId': {
+      id: '/investigations/$investigationId'
+      path: '/investigations/$investigationId'
+      fullPath: '/investigations/$investigationId'
+      preLoaderRoute: typeof InvestigationsInvestigationIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  InvestigationsInvestigationIdRoute: InvestigationsInvestigationIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

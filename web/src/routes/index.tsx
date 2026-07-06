@@ -36,43 +36,42 @@ function InvestigationsPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {data.map((inv) => {
-              // ponytail: Task 8 hasn't added this route yet; widen to `string`
-              // (see new-investigation-dialog.tsx) so typed-router doesn't reject it.
-              const path: string = `/investigations/${inv.id}`
-              return (
-                <TableRow key={inv.id}>
-                  <TableCell>
-                    <Link to={path} className="hover:underline">
-                      {inv.question}
-                    </Link>
-                    {inv.new_evidence_available && (
-                      <Badge variant="outline" className="ml-2">stale</Badge>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={inv.status === "complete" ? "default" : "secondary"}>
-                      {inv.status}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    {inv.confidence !== null ? (
-                      <div className="h-2 w-24 overflow-hidden rounded-full bg-muted">
-                        <div
-                          className="h-full bg-primary"
-                          style={{ width: `${Math.round(inv.confidence * 100)}%` }}
-                        />
-                      </div>
-                    ) : (
-                      <span className="text-muted-foreground">—</span>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {new Date(inv.created_at).toLocaleString()}
-                  </TableCell>
-                </TableRow>
-              )
-            })}
+            {data.map((inv) => (
+              <TableRow key={inv.id}>
+                <TableCell>
+                  <Link
+                    to="/investigations/$investigationId"
+                    params={{ investigationId: inv.id }}
+                    className="hover:underline"
+                  >
+                    {inv.question}
+                  </Link>
+                  {inv.new_evidence_available && (
+                    <Badge variant="outline" className="ml-2">stale</Badge>
+                  )}
+                </TableCell>
+                <TableCell>
+                  <Badge variant={inv.status === "complete" ? "default" : "secondary"}>
+                    {inv.status}
+                  </Badge>
+                </TableCell>
+                <TableCell>
+                  {inv.confidence !== null ? (
+                    <div className="h-2 w-24 overflow-hidden rounded-full bg-muted">
+                      <div
+                        className="h-full bg-primary"
+                        style={{ width: `${Math.round(inv.confidence * 100)}%` }}
+                      />
+                    </div>
+                  ) : (
+                    <span className="text-muted-foreground">—</span>
+                  )}
+                </TableCell>
+                <TableCell className="text-muted-foreground">
+                  {new Date(inv.created_at).toLocaleString()}
+                </TableCell>
+              </TableRow>
+            ))}
           </TableBody>
         </Table>
       )}

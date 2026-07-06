@@ -30,11 +30,7 @@ export function NewInvestigationDialog() {
       setOpen(false)
       setQuestion("")
       setHypothesis("")
-      // ponytail: Task 8 hasn't added the /investigations/$investigationId route yet,
-      // so the typed-router literal doesn't exist. Widen to `string` (same trick
-      // app-shell.tsx uses for /search, /pipeline) — self-corrects once Task 8 lands.
-      const path: string = `/investigations/${inv.id}`
-      navigate({ to: path })
+      navigate({ to: "/investigations/$investigationId", params: { investigationId: inv.id } })
     },
     onError: (err: Error) => toast.error(err.message),
   })
