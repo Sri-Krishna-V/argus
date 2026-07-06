@@ -94,6 +94,28 @@ class InvestigationLink(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_now)
 
 
+class InvestigationTask(Base):
+    """One DAG node (PRD-V2 1.2). depends_on holds task UUIDs as strings; readiness
+    is derived (all deps complete), never stored — it cannot drift. Execution rides
+    the jobs outbox: job.document_id carries the investigation id, payload the task id."""
+
+    __tablename__ = "investigation_tasks"
+
+    id: Mapped[uuid.UUID] = mapped_column(**_uuid_pk)
+    investigation_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("investigations.id"), index=True
+    )
+    task_type: Mapped[str]  # collect_evidence | synthesize (Phase 1)
+    objective: Mapped[str]  # why this task exists (PRD-V2: interpretable planning)
+    specialist: Mapped[str | None]  # assigned in Phase 5 (specialist registry)
+    depends_on: Mapped[list] = mapped_column(JSONB, server_default=text("'[]'::jsonb"))
+    status: Mapped[str] = mapped_column(server_default="pending")
+    inputs: Mapped[dict] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
+    outputs: Mapped[dict] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
+    error: Mapped[str | None]
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_now)
+
+
 class InvestigationEvent(Base):
     """Append-only execution history: every prompt, retrieval param, model version,
     and chunk ID that produced this investigation (Bible §13)."""
