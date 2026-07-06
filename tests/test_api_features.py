@@ -339,3 +339,41 @@ def test_citation_http_url_still_renders_as_a_link(client):
     r = client.get(f"/investigations/{inv_id}")
     assert r.status_code == 200
     assert 'href="https://example.com/good-source"' in r.text
+
+
+# --- report endpoint: numbered, guarded citations ---
+
+
+def test_report_citation_javascript_url_is_nulled(client):
+    inv_id = _investigation_citing("javascript:alert(1)")
+    r = client.get(f"/api/investigations/{inv_id}/report")
+    assert r.status_code == 200
+    citations = r.json()["citations"]
+    assert citations[0]["url"] is None
+    assert citations[0]["index"] == 1
+
+
+def test_report_citation_http_url_is_kept(client):
+    inv_id = _investigation_citing("https://example.com/good-source")
+    r = client.get(f"/api/investigations/{inv_id}/report")
+    assert r.status_code == 200
+    citations = r.json()["citations"]
+    assert citations[0]["url"] == "https://example.com/good-source"
+
+
+def test_report_with_no_citations_returns_empty_list(client):
+    # ponytail: bypass the agent pipeline (its citation gate rejects marker-less
+    # drafts — ADR-0005) and insert a marker-less report directly, same pattern
+    # as _investigation_citing. Deterministic: no dependency on shared-DB search state.
+    with session_scope() as session:
+        inv = Investigation(question="no citations in this narrative")
+        session.add(inv)
+        session.flush()
+        session.add(Report(
+            investigation_id=inv.id, executive_summary="s",
+            narrative="Growth is strong, no citations needed.", model="test",
+        ))
+        inv_id = inv.id
+    r = client.get(f"/api/investigations/{inv_id}/report")
+    assert r.status_code == 200
+    assert r.json()["citations"] == []

@@ -21,6 +21,7 @@ from argus.investigations.models import (
 )
 from argus.knowledge.models import Company, Document
 from argus.observability.models import PipelineRun
+from argus.research.citations import resolve
 from argus.research.retrieval import SearchFilters, search
 
 router = APIRouter()
@@ -180,6 +181,34 @@ def get_evidence(
     ]
 
 
+def _report_citations(session: Session, narrative: str) -> list[dict]:
+    """Numbered, first-appearance-order citations for [chunk:<uuid>] markers.
+    Only http(s) URLs are kept — a stored javascript: URI must never become a link."""
+    order: list[uuid.UUID] = []
+    for m in engine.MARKER_RE.finditer(narrative):
+        cid = uuid.UUID(m.group(1))
+        if cid not in order:
+            order.append(cid)
+    if not order:
+        return []
+    by_id = {c.chunk_id: c for c in resolve(session, order)}
+    return [
+        {
+            "index": i,
+            "chunk_id": by_id[cid].chunk_id,
+            "document_id": by_id[cid].document_id,
+            "title": by_id[cid].title,
+            "url": by_id[cid].url
+            if by_id[cid].url and by_id[cid].url.startswith(("http://", "https://"))
+            else None,
+            "source": by_id[cid].source,
+            "published_at": by_id[cid].published_at,
+            "excerpt": by_id[cid].excerpt,
+        }
+        for i, cid in enumerate(order, 1)
+    ]
+
+
 @router.get("/api/investigations/{investigation_id}/report")
 def get_report(investigation_id: uuid.UUID, session: Session = Depends(get_db)) -> dict:
     _get_or_404(session, investigation_id)
@@ -197,7 +226,7 @@ def get_report(investigation_id: uuid.UUID, session: Session = Depends(get_db)) 
             "id", "version", "executive_summary", "key_findings", "risks",
             "follow_up_questions", "narrative", "model", "created_at",
         )
-    }
+    } | {"citations": _report_citations(session, report.narrative)}
 
 
 @router.post("/api/investigations/{investigation_id}/refresh")
