@@ -6,7 +6,7 @@ import logging
 import time
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from argus.core import events
@@ -24,16 +24,17 @@ log = logging.getLogger(__name__)
 
 
 def claim_next(session: Session) -> Job | None:
+    # all queue time predicates use the DB clock (see events.enqueue) — never the client's
     job = session.scalars(
         select(Job)
-        .where(Job.status == "pending", Job.run_after <= datetime.now(UTC))
+        .where(Job.status == "pending", Job.run_after <= func.now())
         .order_by(Job.id)
         .limit(1)
         .with_for_update(skip_locked=True)
     ).first()
     if job:
         job.status = "running"
-        job.claimed_at = datetime.now(UTC)
+        job.claimed_at = func.now()
         job.attempts += 1
     return job
 
@@ -48,8 +49,8 @@ def reap_stale(session: Session) -> int:
     lease = timedelta(seconds=get_settings().job_lease_seconds)
     result = session.execute(
         update(Job)
-        .where(Job.status == "running", Job.claimed_at < datetime.now(UTC) - lease)
-        .values(status="pending", run_after=datetime.now(UTC))
+        .where(Job.status == "running", Job.claimed_at < func.now() - lease)
+        .values(status="pending", run_after=func.now())
         .returning(Job.id)
     )
     ids = result.scalars().all()

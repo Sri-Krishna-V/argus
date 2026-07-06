@@ -2,6 +2,8 @@
 worker, producing chunks, embeddings, mentions, events, and pipeline_runs; replaying
 a stage converges (idempotency). Requires Postgres (make up)."""
 
+from datetime import UTC, datetime, timedelta
+
 import pytest
 import sqlalchemy as sa
 
@@ -79,7 +81,11 @@ def test_failing_job_retries_then_dead_letters(migrated_db, monkeypatch):
         raise RuntimeError("stage exploded")
 
     monkeypatch.setitem(pipeline._HANDLERS, "parse", boom)
-    monkeypatch.setattr(events, "retry_at", lambda attempts: events.datetime.now(events.UTC))
+    # a past timestamp keeps the retried job immediately claimable even if the
+    # wall clock steps backward between attempts (WSL2)
+    monkeypatch.setattr(
+        events, "retry_at", lambda attempts: datetime.now(UTC) - timedelta(hours=1)
+    )
 
     doc_id = ingest_html(HTML)
     for _ in range(3):

@@ -325,7 +325,7 @@ def retry_job(job_id: int, session: Session = Depends(get_db)) -> dict:
         raise HTTPException(404, "no dead job with that id")
     job.status = "pending"
     job.attempts = 0
-    job.run_after = datetime.now(UTC)
+    job.run_after = func.now()
     return {"retried": True}
 
 
