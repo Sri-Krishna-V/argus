@@ -286,6 +286,49 @@ def link_investigations(
     return {"linked": True}
 
 
+# --- jobs ---
+
+
+_JOB_STATUSES = ("pending", "running", "completed", "failed", "dead")
+
+
+@router.get("/api/jobs")
+def list_jobs(
+    status: str = Query(...),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    session: Session = Depends(get_db),
+) -> list[dict]:
+    if status not in _JOB_STATUSES:
+        raise HTTPException(422, f"status must be one of {_JOB_STATUSES}")
+    rows = session.scalars(
+        select(Job)
+        .where(Job.status == status)
+        .order_by(Job.created_at.desc())
+        .limit(limit)
+        .offset(offset)
+    ).all()
+    return [
+        {
+            "id": j.id, "job_type": j.job_type, "document_id": j.document_id,
+            "attempts": j.attempts, "max_attempts": j.max_attempts,
+            "last_error": j.last_error, "created_at": j.created_at,
+        }
+        for j in rows
+    ]
+
+
+@router.post("/api/jobs/{job_id}/retry")
+def retry_job(job_id: int, session: Session = Depends(get_db)) -> dict:
+    job = session.get(Job, job_id)
+    if job is None or job.status != "dead":
+        raise HTTPException(404, "no dead job with that id")
+    job.status = "pending"
+    job.attempts = 0
+    job.run_after = datetime.now(UTC)
+    return {"retried": True}
+
+
 # --- observability ---
 
 
@@ -328,4 +371,5 @@ def pipeline_metrics(session: Session = Depends(get_db)) -> dict:
         "stages_24h": stages,
         "oldest_pending_seconds": oldest_pending_seconds,
         "retries_24h": retries_24h,
+        "document_count": session.scalar(select(func.count()).select_from(Document)),
     }

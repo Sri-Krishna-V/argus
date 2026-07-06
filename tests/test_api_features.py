@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 
 from argus.core.config import get_settings
 from argus.core.db import session_scope
+from argus.core.models import Job
 from argus.investigations.models import Investigation, InvestigationLink, Report
 from argus.knowledge.models import Chunk
 from argus.main import _buckets, app
@@ -194,6 +195,53 @@ def test_evidence_limit_and_offset(client, monkeypatch):
             f"/api/investigations/{inv_id}/evidence", params={"limit": 1, "offset": 1}
         ).json()
         assert second[0]["chunk_id"] != limited[0]["chunk_id"]
+
+
+def _dead_job(**overrides) -> int:
+    with session_scope() as session:
+        job = Job(job_type="parse", status="dead", attempts=3, last_error="boom", **overrides)
+        session.add(job)
+        session.flush()
+        return job.id
+
+
+def test_list_jobs_filters_by_status(client):
+    dead_id = _dead_job()
+    jobs = client.get("/api/jobs", params={"status": "dead"}).json()
+    assert any(j["id"] == dead_id and j["last_error"] == "boom" for j in jobs)
+
+
+def test_list_jobs_unknown_status_is_422(client):
+    assert client.get("/api/jobs", params={"status": "bogus"}).status_code == 422
+
+
+def test_retry_job_resets_dead_job_to_pending(client):
+    job_id = _dead_job()
+    r = client.post(f"/api/jobs/{job_id}/retry")
+    assert r.status_code == 200
+    assert r.json() == {"retried": True}
+    with session_scope() as session:
+        job = session.get(Job, job_id)
+        assert job.status == "pending"
+        assert job.attempts == 0
+
+
+def test_retry_job_unknown_id_is_404(client):
+    assert client.post("/api/jobs/999999999/retry").status_code == 404
+
+
+def test_retry_job_not_dead_is_404(client):
+    with session_scope() as session:
+        job = Job(job_type="parse", status="pending")
+        session.add(job)
+        session.flush()
+        job_id = job.id
+    assert client.post(f"/api/jobs/{job_id}/retry").status_code == 404
+
+
+def test_pipeline_metrics_includes_document_count(client, seeded_companies):
+    body = client.get("/api/metrics/pipeline").json()
+    assert body["document_count"] >= 0
 
 
 # --- security headers ---
