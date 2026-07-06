@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 
 from argus.core.config import get_settings
 from argus.core.db import session_scope
-from argus.investigations.models import Investigation, Report
+from argus.investigations.models import Investigation, InvestigationLink, Report
 from argus.knowledge.models import Chunk
 from argus.main import _buckets, app
 from tests.conftest import drain_queue, ingest_html, requires_db
@@ -377,3 +377,40 @@ def test_report_with_no_citations_returns_empty_list(client):
     r = client.get(f"/api/investigations/{inv_id}/report")
     assert r.status_code == 200
     assert r.json()["citations"] == []
+
+
+# --- investigation detail: hypotheses and links ---
+
+
+def test_investigation_detail_includes_hypotheses_and_links(client):
+    from argus.investigations import engine
+
+    with session_scope() as session:
+        inv = engine.create(session, "does X affect Y?", "yes, because Z")
+        other = Investigation(question="a related question")
+        session.add(other)
+        session.flush()
+        session.add(InvestigationLink(
+            src_investigation_id=inv.id, dst_investigation_id=other.id,
+            link_type="relates_to",
+        ))
+        inv_id = inv.id
+
+    r = client.get(f"/api/investigations/{inv_id}")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["hypotheses"][0]["statement"] == "yes, because Z"
+    assert body["links"][0]["link_type"] == "relates_to"
+    assert body["links"][0]["question"] == "a related question"
+
+
+def test_investigation_detail_with_no_hypotheses_or_links_returns_empty_lists(client):
+    with session_scope() as session:
+        inv = Investigation(question="standalone question")
+        session.add(inv)
+        session.flush()
+        inv_id = inv.id
+
+    body = client.get(f"/api/investigations/{inv_id}").json()
+    assert body["hypotheses"] == []
+    assert body["links"] == []

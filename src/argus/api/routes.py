@@ -15,6 +15,7 @@ from argus.core.models import Job
 from argus.investigations import engine
 from argus.investigations.models import (
     Evidence,
+    Hypothesis,
     Investigation,
     InvestigationLink,
     Report,
@@ -153,7 +154,25 @@ def _get_or_404(session: Session, investigation_id: uuid.UUID) -> Investigation:
 def get_investigation(
     investigation_id: uuid.UUID, session: Session = Depends(get_db)
 ) -> dict:
-    return _investigation_json(session, _get_or_404(session, investigation_id))
+    inv = _get_or_404(session, investigation_id)
+    hypotheses = session.scalars(
+        select(Hypothesis).where(Hypothesis.investigation_id == investigation_id)
+    ).all()
+    links = session.execute(
+        select(InvestigationLink, Investigation)
+        .join(Investigation, Investigation.id == InvestigationLink.dst_investigation_id)
+        .where(InvestigationLink.src_investigation_id == investigation_id)
+    ).all()
+    return _investigation_json(session, inv) | {
+        "hypotheses": [
+            {"id": h.id, "statement": h.statement, "created_at": h.created_at}
+            for h in hypotheses
+        ],
+        "links": [
+            {"link_type": link.link_type, "investigation_id": dst.id, "question": dst.question}
+            for link, dst in links
+        ],
+    }
 
 
 @router.get("/api/investigations/{investigation_id}/evidence")
