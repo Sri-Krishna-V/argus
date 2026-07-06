@@ -5,16 +5,39 @@ import uuid
 from datetime import datetime
 from enum import StrEnum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+
+class PlannedQuery(BaseModel):
+    """One retrieval query with the reason it exists (PRD-V2 2.1: queries are
+    explainable). Priority/timeframe arrive with Retrieval Intelligence (Phase 3)."""
+
+    query: str = Field(min_length=1, description="short keyword retrieval query")
+    objective: str = Field(default="", description="what evidence this query targets")
 
 
 class ResearchPlan(BaseModel):
     """Planner output: plan precedes retrieval, never search-first."""
 
+    investigation_type: str = Field(
+        default="general",
+        description="one of: company_research, industry_analysis, executive_profiling, "
+        "risk_assessment, event_investigation, earnings_analysis, competitive_analysis, "
+        "general",
+    )
+    objective: str = Field(default="", description="one sentence: the investigation goal")
     companies: list[str] = Field(description="company names central to the question")
     doc_types: list[str] = Field(description="document types to search: news, filing")
-    queries: list[str] = Field(description="3-6 retrieval queries covering the question")
+    queries: list[PlannedQuery] = Field(description="3-6 retrieval queries covering the question")
     rationale: str = Field(description="one paragraph: why these targets and queries")
+
+    @field_validator("queries", mode="before")
+    @classmethod
+    def _upgrade_v1_queries(cls, v):
+        # V1 stored plans (and the V1 fake adapter) carry plain strings
+        if isinstance(v, list):
+            return [{"query": q} if isinstance(q, str) else q for q in v]
+        return v
 
 
 class Stance(StrEnum):

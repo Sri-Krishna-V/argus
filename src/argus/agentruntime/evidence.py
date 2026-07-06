@@ -81,7 +81,8 @@ def collect(
     evidence: list[CollectedEvidence] = []
     records: list[ExecutionRecord] = []
 
-    for query in plan.queries:
+    for planned in plan.queries:
+        query = planned.query
         hits = retrieve(session, query, company_ids or [None], doc_types, k, seen)
         if not hits:
             continue

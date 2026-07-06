@@ -135,7 +135,7 @@ def _collect(
             )
         )
     _emit(session, inv.id, "evidence.collected", {
-        "queries": plan.queries,
+        "queries": [q.query for q in plan.queries],
         "company_ids": inv.company_ids,
         "doc_types": plan.doc_types,
         "k": k,
