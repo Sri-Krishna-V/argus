@@ -16,6 +16,7 @@ from argus.investigations.models import (
     Evidence,
     Investigation,
     InvestigationEvent,
+    InvestigationTask,
     Report,
 )
 from argus.knowledge.models import Document
@@ -176,8 +177,8 @@ def test_run_produces_evidence_report_confidence_and_history(monkeypatch, corpus
             )
         ]
         assert event_types == [
-            "investigation.created", "agent.plan", "evidence.collected",
-            "agent.draft", "investigation.completed",
+            "investigation.created", "agent.plan", "investigation.compiled",
+            "evidence.collected", "agent.draft", "investigation.completed",
         ]
         # replay record carries the prompts and retrieval params (Bible §13)
         collected = session.scalar(
@@ -200,15 +201,24 @@ def test_invented_citation_marker_fails_run_and_rolls_back(monkeypatch, corpus):
     with session_scope() as session:
         inv = session.get(Investigation, inv_id)
         assert inv.status == "failed"
-        failed = session.scalar(
+        assert session.scalar(
             sa.select(InvestigationEvent).where(
                 InvestigationEvent.investigation_id == inv_id,
                 InvestigationEvent.event_type == "investigation.failed",
             )
+        ) is not None
+        # the citation gate lives in the synthesize task; its own error records why
+        synth = session.scalar(
+            sa.select(InvestigationTask).where(
+                InvestigationTask.investigation_id == inv_id,
+                InvestigationTask.task_type == "synthesize",
+            )
         )
-        assert "outside the evidence set" in failed.payload["error"]
-        # partial writes rolled back: no evidence, no report survives a failed run
-        assert not session.scalars(
+        assert synth.status == "failed"
+        assert "outside the evidence set" in synth.error
+        # each task commits independently: the collect task that succeeded before
+        # synthesize failed leaves its evidence in place — only the report is blocked
+        assert session.scalars(
             sa.select(Evidence).where(Evidence.investigation_id == inv_id)
         ).all()
         assert not session.scalars(
@@ -220,12 +230,20 @@ def test_narrative_without_markers_is_rejected(monkeypatch, corpus):
     _fake_adapter(monkeypatch, narrative_marker="none")
     with session_scope() as session:
         inv_id = engine.create(session, "q?").id
-    with session_scope() as session, pytest.raises(ValueError, match="no citation markers"):
+    with session_scope() as session, pytest.raises(RuntimeError, match="failed during task"):
         engine.run(session, inv_id)
+    with session_scope() as session:
+        synth = session.scalar(
+            sa.select(InvestigationTask).where(
+                InvestigationTask.investigation_id == inv_id,
+                InvestigationTask.task_type == "synthesize",
+            )
+        )
+        assert "no citation markers" in synth.error
 
 
 def test_plan_with_no_hits_fails_not_fabricates(monkeypatch, corpus):
-    """No retrievable evidence must fail the run, never produce an evidence-free report."""
+    """An empty plan must fail the run, never produce an evidence-free report."""
     _fake_adapter(monkeypatch)
     monkeypatch.setattr(
         "argus.agentruntime.planner.plan",
@@ -236,7 +254,7 @@ def test_plan_with_no_hits_fails_not_fabricates(monkeypatch, corpus):
     )
     with session_scope() as session:
         inv_id = engine.create(session, "q?").id
-    with session_scope() as session, pytest.raises(ValueError, match="no evidence"):
+    with session_scope() as session, pytest.raises(ValueError, match="no queries"):
         engine.run(session, inv_id)
 
 
@@ -265,13 +283,16 @@ def test_replay_reproduces_recorded_retrieval_set(monkeypatch, corpus):
     with session_scope() as session:
         result = engine.replay_retrieval(session, inv_id)
         assert result["match"] is True
-        assert result["recorded"]
+        assert result["tasks"]
+        for t in result["tasks"]:
+            assert set(t) >= {"task_id", "recorded", "replayed"}
+            assert t["recorded"] and t["recorded"] == t["replayed"]
 
 
 def test_replay_without_history_raises(corpus):
     with session_scope() as session:
         inv_id = engine.create(session, "q?").id
-        with pytest.raises(LookupError, match="no evidence.collected"):
+        with pytest.raises(LookupError, match="no completed collect tasks"):
             engine.replay_retrieval(session, inv_id)
 
 

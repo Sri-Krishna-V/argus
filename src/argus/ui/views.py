@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from argus.api.routes import get_db
 from argus.core.db import session_scope
 from argus.core.models import Job
-from argus.investigations import engine
+from argus.investigations import engine, orchestrator
 from argus.investigations.models import (
     Evidence,
     Hypothesis,
@@ -67,7 +67,7 @@ def _render_narrative(session: Session, narrative: str) -> tuple[str, list]:
     output — HTML-escape it before injecting our own markup (the template renders
     the result with `| safe`)."""
     order: list[uuid.UUID] = []
-    for m in engine.MARKER_RE.finditer(narrative):
+    for m in orchestrator.MARKER_RE.finditer(narrative):
         cid = uuid.UUID(m.group(1))
         if cid not in order:
             order.append(cid)
@@ -83,7 +83,7 @@ def _render_narrative(session: Session, narrative: str) -> tuple[str, list]:
         n = index[uuid.UUID(m.group(1))]
         return f'<sup><a href="#cite-{n}">[{n}]</a></sup>'
 
-    return engine.MARKER_RE.sub(number, str(escape(narrative))), citations
+    return orchestrator.MARKER_RE.sub(number, str(escape(narrative))), citations
 
 
 @router.get("/investigations/{investigation_id}")

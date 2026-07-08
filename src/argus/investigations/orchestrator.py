@@ -5,6 +5,7 @@ handlers' agentruntime calls, behind the citation gate."""
 
 import graphlib
 import re
+import time
 import uuid
 
 from sqlalchemy import delete, select
@@ -30,11 +31,8 @@ from argus.knowledge.models import Document
 
 JOB_TYPE = "investigation.task"
 
-# ponytail: duplicated from engine.MARKER_RE rather than moved — ui/views.py,
-# evals/runner.py and api/routes.py still import the engine copy, and engine now
-# imports this module (for the v1-compat synthesize shim below), so engine can't be
-# the one re-exported from here without a cycle. Both copies collapse to one when
-# Task 6 finishes rewiring engine's callers onto the orchestrator.
+# Sole citation-marker pattern (Task 6 retired the engine.py copy + v1-compat
+# shim); ui/views.py, api/routes.py and evals/runner.py import this one.
 MARKER_RE = re.compile(r"\[chunk:([0-9a-f-]{36})\]")
 
 
@@ -55,11 +53,18 @@ def _validate_dag(deps: dict[str, list[str]]) -> None:
 
 
 def _enqueue_task(session: Session, task: InvestigationTask) -> None:
-    events.enqueue(
+    job = events.enqueue(
         session, JOB_TYPE,
         document_id=task.investigation_id,  # aggregate id: lets execute() drain one investigation
         payload={"task_id": str(task.id)},
     )
+    # ponytail: task handlers fail on deterministic application errors (citation
+    # gate, empty evidence, stance-batch mismatches) — retrying with the same
+    # recorded inputs can't succeed, and drain() polls in-process, so the default
+    # 30s*2^n backoff would stall a synchronous run()/refresh() for minutes on any
+    # failure. Fail fast; upgrade to distinguishing transient vs. permanent
+    # exceptions if genuinely-transient task failures show up in practice.
+    job.max_attempts = 1
 
 
 def compile_dag(
@@ -290,3 +295,26 @@ def _advance(session: Session, completed: InvestigationTask) -> None:
             statuses.get(d) == "complete" for d in t.depends_on
         ):
             _enqueue_task(session, t)
+
+
+def drain(investigation_id: uuid.UUID) -> None:
+    """Run this investigation's jobs to completion in-process. Mirrors
+    worker.run_once's transaction/backoff/dead-letter semantics, filtered to one
+    aggregate; safe alongside real workers (SKIP LOCKED splits the work) —
+    when another worker holds a task, poll until every task is terminal."""
+    from argus.dataplatform import worker  # investigations → dataplatform is layer-legal
+
+    while True:
+        ran = worker.run_once(document_id=investigation_id)
+        if ran:
+            continue
+        with session_scope() as session:
+            live = session.scalar(
+                select(InvestigationTask.id).where(
+                    InvestigationTask.investigation_id == investigation_id,
+                    InvestigationTask.status.in_(["pending", "running"]),
+                ).limit(1)
+            )
+        if live is None:
+            return
+        time.sleep(0.1)  # a job exists but isn't claimable yet (backoff or other worker)

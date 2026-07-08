@@ -68,6 +68,18 @@ def db_session(migrated_db):
         session.rollback()
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _investigation_task_handler():
+    """engine.run/refresh (Task 6) drain investigation.task jobs through the outbox
+    in-process, so the dispatcher must be registered wherever they run — including
+    every test. Production composition-root wiring (orchestrator.register(), called
+    from cli.py/main.py) is V2 Phase 1 Task 8; this stands in for it until then."""
+    from argus.dataplatform import worker
+    from argus.investigations import orchestrator
+
+    worker.EXTRA_HANDLERS[orchestrator.JOB_TYPE] = orchestrator.run_task
+
+
 @pytest.fixture
 def fake_embeddings(monkeypatch):
     from argus.dataplatform import embeddings

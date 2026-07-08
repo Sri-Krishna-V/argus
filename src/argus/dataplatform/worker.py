@@ -79,10 +79,12 @@ def _execute(session: Session, job: Job) -> None:
         raise ValueError(f"unknown job type {job.job_type}")
 
 
-def run_once() -> bool:
-    """Claim and run one job. Returns False when the queue is empty."""
+def run_once(document_id: uuid.UUID | None = None) -> bool:
+    """Claim and run one job, optionally filtered to one aggregate (investigations'
+    drain() runs one investigation's jobs in-process this way). Returns False when
+    no matching job is claimable."""
     with session_scope() as session:
-        job = claim_next(session)
+        job = claim_next(session, document_id=document_id)
         if job is None:
             return False
         job_id, job_type, doc_id, attempt = job.id, job.job_type, job.document_id, job.attempts

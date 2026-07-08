@@ -18,7 +18,7 @@ from argus.agentruntime.schemas import (
     StanceResult,
 )
 from argus.evals import runner as eval_runner
-from argus.investigations.engine import MARKER_RE
+from argus.investigations.orchestrator import MARKER_RE
 from argus.main import app
 from tests.conftest import drain_queue, ingest_html, requires_db
 
@@ -166,7 +166,8 @@ def test_replay_reproduces_recorded_retrieval(client, investigation):
     inv_id = investigation["id"]
     result = client.post(f"/api/investigations/{inv_id}/replay").json()
     assert result["match"] is True
-    assert result["recorded_count"] == result["replayed_count"] > 0
+    assert result["tasks"]
+    assert all(t["recorded"] == t["replayed"] for t in result["tasks"])
 
 
 # --- 4: refresh + staleness (ADR-0007: staleness computed on read, cleared by refresh) ---

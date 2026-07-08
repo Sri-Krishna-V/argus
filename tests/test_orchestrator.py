@@ -66,7 +66,7 @@ def test_compile_dag_builds_fanout_fanin(db_session):
     assert collects[0].inputs["query"] == "q1"
 
     jobs = db_session.scalars(
-        sa.select(Job).where(Job.job_type == orchestrator.JOB_TYPE)
+        sa.select(Job).where(Job.job_type == orchestrator.JOB_TYPE, Job.document_id == inv.id)
     ).all()
     # only dependency-free tasks are enqueued; synthesize waits
     assert {j.payload["task_id"] for j in jobs} == {str(t.id) for t in collects}
@@ -231,3 +231,68 @@ def test_exhausted_task_fails_investigation(monkeypatch, fake_embeddings, migrat
         assert task.status == "failed"
         assert "handler exploded" in task.error
         assert session.get(Investigation, inv_id).status == "failed"
+
+
+@requires_db
+def test_engine_run_via_dag_and_refresh_marks_obsolete(monkeypatch, fake_embeddings,
+                                                       seeded_companies):
+    from argus.investigations import engine
+    from argus.investigations.models import Investigation, InvestigationTask, Report
+    from tests.conftest import drain_queue, ingest_html
+    from tests.test_investigations import _fake_adapter
+
+    _fake_adapter(monkeypatch)
+    _register(monkeypatch)
+    ingest_html(
+        f"<html><body><p>ZZZT NVIDIA CORP automotive self-driving platform revenue "
+        f"grew strongly. {FILLER}</p></body></html>", doc_type="news",
+    )
+    drain_queue()
+
+    with session_scope() as session:
+        inv = engine.create(session, "How is the automotive business?")
+        inv_id = inv.id
+    with session_scope() as session:
+        engine.run(session, inv_id)
+    with session_scope() as session:
+        inv = session.get(Investigation, inv_id)
+        assert inv.status == "complete" and inv.confidence is not None
+        v1_tasks = session.scalars(sa.select(InvestigationTask)
+                                   .where(InvestigationTask.investigation_id == inv_id)).all()
+        assert v1_tasks and all(t.status == "complete" for t in v1_tasks)
+
+    with session_scope() as session:
+        engine.refresh(session, inv_id)
+    with session_scope() as session:
+        inv = session.get(Investigation, inv_id)
+        assert inv.status == "complete" and inv.version == 2
+        reports = session.scalars(sa.select(Report)
+                                  .where(Report.investigation_id == inv_id)).all()
+        assert {r.version for r in reports} == {1, 2}
+        tasks = session.scalars(sa.select(InvestigationTask)
+                                .where(InvestigationTask.investigation_id == inv_id)).all()
+        # v1 tasks stay complete (history preserved); v2 tasks complete too
+        assert len(tasks) == 2 * len(v1_tasks)
+
+
+@requires_db
+def test_replay_matches_per_task(monkeypatch, fake_embeddings, seeded_companies):
+    from argus.investigations import engine
+    from tests.conftest import drain_queue, ingest_html
+    from tests.test_investigations import _fake_adapter
+
+    _fake_adapter(monkeypatch)
+    _register(monkeypatch)
+    ingest_html(
+        f"<html><body><p>ZZZT NVIDIA CORP automotive self-driving platform revenue "
+        f"grew strongly. {FILLER}</p></body></html>", doc_type="news",
+    )
+    drain_queue()
+    with session_scope() as session:
+        inv_id = engine.create(session, "How is the automotive business?").id
+    with session_scope() as session:
+        engine.run(session, inv_id)
+    with session_scope() as session:
+        result = engine.replay_retrieval(session, inv_id)
+        assert result["match"] is True
+        assert result["tasks"]  # per-task breakdown

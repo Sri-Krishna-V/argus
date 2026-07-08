@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from argus.core.db import session_scope
 from argus.core.models import Job
-from argus.investigations import engine
+from argus.investigations import engine, orchestrator
 from argus.investigations.models import (
     Evidence,
     Hypothesis,
@@ -204,7 +204,7 @@ def _report_citations(session: Session, narrative: str) -> list[dict]:
     """Numbered, first-appearance-order citations for [chunk:<uuid>] markers.
     Only http(s) URLs are kept — a stored javascript: URI must never become a link."""
     order: list[uuid.UUID] = []
-    for m in engine.MARKER_RE.finditer(narrative):
+    for m in orchestrator.MARKER_RE.finditer(narrative):
         cid = uuid.UUID(m.group(1))
         if cid not in order:
             order.append(cid)
@@ -262,12 +262,7 @@ def replay_investigation(
     investigation_id: uuid.UUID, session: Session = Depends(get_db)
 ) -> dict:
     _get_or_404(session, investigation_id)
-    result = engine.replay_retrieval(session, investigation_id)
-    return {
-        "match": result["match"],
-        "recorded_count": len(result["recorded"]),
-        "replayed_count": len(result["replayed"]),
-    }
+    return engine.replay_retrieval(session, investigation_id)
 
 
 @router.post("/api/investigations/{investigation_id}/links", status_code=201)
