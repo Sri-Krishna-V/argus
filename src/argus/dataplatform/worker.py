@@ -4,6 +4,8 @@ scheduler. Scale-out = run more worker processes; claiming is already safe."""
 
 import logging
 import time
+import uuid
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func, select, update
@@ -22,16 +24,24 @@ from argus.observability.models import PipelineRun
 
 log = logging.getLogger(__name__)
 
+# Extension point: the composition root (argus.cli) registers handlers for job types
+# owned by layers ABOVE dataplatform (e.g. "investigation.task" → investigations).
+# dataplatform never imports upward (layer contract); it only calls what was injected.
+EXTRA_HANDLERS: dict[str, Callable[[Session, Job], None]] = {}
 
-def claim_next(session: Session) -> Job | None:
+
+def claim_next(session: Session, document_id: uuid.UUID | None = None) -> Job | None:
     # all queue time predicates use the DB clock (see events.enqueue) — never the client's
-    job = session.scalars(
+    q = (
         select(Job)
         .where(Job.status == "pending", Job.run_after <= func.now())
         .order_by(Job.id)
         .limit(1)
         .with_for_update(skip_locked=True)
-    ).first()
+    )
+    if document_id is not None:
+        q = q.where(Job.document_id == document_id)
+    job = session.scalars(q).first()
     if job:
         job.status = "running"
         job.claimed_at = func.now()
@@ -63,6 +73,8 @@ def _execute(session: Session, job: Job) -> None:
     if job.job_type in pipeline.STAGES:
         version = job.payload.get("pipeline_version", get_settings().pipeline_version)
         pipeline.run_stage(session, job.job_type, job.document_id, version)
+    elif job.job_type in EXTRA_HANDLERS:
+        EXTRA_HANDLERS[job.job_type](session, job)
     else:
         raise ValueError(f"unknown job type {job.job_type}")
 
