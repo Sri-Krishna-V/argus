@@ -18,6 +18,7 @@ from argus.investigations.models import (
     Hypothesis,
     Investigation,
     InvestigationLink,
+    InvestigationTask,
     Report,
 )
 from argus.knowledge.models import Company, Document
@@ -198,6 +199,27 @@ def get_evidence(
         }
         for e in rows
     ]
+
+
+@router.get("/api/investigations/{investigation_id}/tasks")
+def get_tasks(investigation_id: uuid.UUID, session: Session = Depends(get_db)) -> dict:
+    _get_or_404(session, investigation_id)
+    rows = session.scalars(
+        select(InvestigationTask)
+        .where(InvestigationTask.investigation_id == investigation_id)
+        .order_by(InvestigationTask.created_at, InvestigationTask.id)
+    ).all()
+    return {
+        "tasks": [
+            {
+                "id": t.id, "task_type": t.task_type, "objective": t.objective,
+                "specialist": t.specialist, "depends_on": t.depends_on,
+                "status": t.status, "outputs": t.outputs, "error": t.error,
+                "created_at": t.created_at,
+            }
+            for t in rows
+        ]
+    }
 
 
 def _report_citations(session: Session, narrative: str) -> list[dict]:

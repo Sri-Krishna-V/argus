@@ -462,3 +462,45 @@ def test_investigation_detail_with_no_hypotheses_or_links_returns_empty_lists(cl
     body = client.get(f"/api/investigations/{inv_id}").json()
     assert body["hypotheses"] == []
     assert body["links"] == []
+
+
+@requires_db
+def test_tasks_endpoint_lists_dag(monkeypatch, fake_embeddings, seeded_companies):
+    from fastapi.testclient import TestClient
+
+    from argus.dataplatform import worker
+    from argus.investigations import engine, orchestrator
+    from argus.main import app as fastapi_app
+    from tests.test_investigations import _fake_adapter
+
+    _fake_adapter(monkeypatch)
+    monkeypatch.setitem(worker.EXTRA_HANDLERS, orchestrator.JOB_TYPE, orchestrator.run_task)
+    ingest_html(
+        "<html><body><p>ZZZT NVIDIA CORP automotive self-driving platform revenue "
+        "grew.</p></body></html>", doc_type="news",
+    )
+    drain_queue()
+    with session_scope() as session:
+        inv_id = engine.create(session, "How is the automotive business?").id
+    engine.execute(inv_id, "run")
+
+    client = TestClient(fastapi_app)
+    r = client.get(f"/api/investigations/{inv_id}/tasks")
+    assert r.status_code == 200
+    tasks = r.json()["tasks"]
+    assert {t["task_type"] for t in tasks} == {"collect_evidence", "synthesize"}
+    assert all(t["status"] == "complete" for t in tasks)
+    synth = next(t for t in tasks if t["task_type"] == "synthesize")
+    assert synth["depends_on"]
+
+
+@requires_db
+def test_tasks_endpoint_404s_on_unknown_investigation(fake_embeddings):
+    import uuid as _uuid
+
+    from fastapi.testclient import TestClient
+
+    from argus.main import app as fastapi_app
+
+    client = TestClient(fastapi_app)
+    assert client.get(f"/api/investigations/{_uuid.uuid4()}/tasks").status_code == 404
