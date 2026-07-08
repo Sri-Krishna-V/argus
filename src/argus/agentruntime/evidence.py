@@ -69,6 +69,41 @@ def retrieve(
     return hits
 
 
+def collect_query(
+    session: Session, question: str, query: str, company_ids: list[uuid.UUID | None],
+    doc_types: list[str] | None, k: int, seen: set[uuid.UUID] | None = None,
+) -> tuple[list[CollectedEvidence], list[ExecutionRecord]]:
+    """One query's evidence: deterministic retrieval, then one stance batch call.
+    The DAG's collect_evidence task unit (PRD-V2 4.2-lite)."""
+    seen = set() if seen is None else seen
+    hits = retrieve(session, query, company_ids or [None], doc_types, k, seen)
+    if not hits:
+        return [], []
+    numbered = "\n\n".join(
+        f"[{i}] {h.text[:EXCERPT_CHARS]}" for i, h in enumerate(hits, 1)
+    )
+    batch, record = adapter.run_structured(
+        "classify_stance",
+        INSTRUCTION,
+        f"Question: {question}\n\nExcerpts:\n---\n{numbered}\n---",
+        StanceBatch,
+    )
+    if len(batch.results) != len(hits):
+        raise ValueError(
+            f"stance batch returned {len(batch.results)} results for {len(hits)} excerpts"
+        )
+    evidence = [
+        CollectedEvidence(
+            chunk_id=hit.chunk_id, document_id=hit.document_id,
+            excerpt=hit.text[:EXCERPT_CHARS], stance=result.stance,
+            rationale=result.rationale, query=query, scores=hit.scores,
+            strategy=hit.strategy,
+        )
+        for hit, result in zip(hits, batch.results, strict=True)
+    ]
+    return evidence, [record]
+
+
 def collect(
     session: Session, question: str, plan: ResearchPlan, k: int | None = None,
     company_ids: list[uuid.UUID] | None = None,
@@ -82,36 +117,9 @@ def collect(
     records: list[ExecutionRecord] = []
 
     for planned in plan.queries:
-        query = planned.query
-        hits = retrieve(session, query, company_ids or [None], doc_types, k, seen)
-        if not hits:
-            continue
-
-        numbered = "\n\n".join(
-            f"[{i}] {h.text[:EXCERPT_CHARS]}" for i, h in enumerate(hits, 1)
+        found, recorded = collect_query(
+            session, question, planned.query, company_ids, doc_types, k, seen
         )
-        batch, record = adapter.run_structured(
-            "classify_stance",
-            INSTRUCTION,
-            f"Question: {question}\n\nExcerpts:\n---\n{numbered}\n---",
-            StanceBatch,
-        )
-        records.append(record)
-        if len(batch.results) != len(hits):
-            raise ValueError(
-                f"stance batch returned {len(batch.results)} results for {len(hits)} excerpts"
-            )
-        evidence.extend(
-            CollectedEvidence(
-                chunk_id=hit.chunk_id,
-                document_id=hit.document_id,
-                excerpt=hit.text[:EXCERPT_CHARS],
-                stance=result.stance,
-                rationale=result.rationale,
-                query=query,
-                scores=hit.scores,
-                strategy=hit.strategy,
-            )
-            for hit, result in zip(hits, batch.results, strict=True)
-        )
+        evidence.extend(found)
+        records.extend(recorded)
     return evidence, records

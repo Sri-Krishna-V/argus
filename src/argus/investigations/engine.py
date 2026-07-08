@@ -12,27 +12,33 @@ from datetime import UTC, datetime
 from sqlalchemy import delete, exists, select
 from sqlalchemy.orm import Session
 
-from argus.agentruntime import drafter, planner
 from argus.agentruntime import evidence as collector
-from argus.agentruntime.schemas import (
-    CollectedEvidence,
-    ExecutionRecord,
-    ResearchPlan,
-    Stance,
-)
+from argus.agentruntime import planner
+from argus.agentruntime.schemas import ExecutionRecord, ResearchPlan
 from argus.core.config import get_settings
 from argus.core.db import session_scope
-from argus.investigations import confidence
+from argus.investigations import orchestrator
 from argus.investigations.models import (
     Evidence,
     Hypothesis,
     Investigation,
     InvestigationEvent,
-    Report,
+    InvestigationTask,
 )
 from argus.knowledge.models import Document, DocumentCompany
 
+# ponytail: v1-compat scaffolding for Task 6 (full engine→orchestrator rewiring).
+# `run`/`refresh` still own their transaction directly (no task DAG involved for a
+# V1-style single-shot investigation), so they hand orchestrator.synthesize a
+# throwaway, unsaved task instead of a persisted DAG node — same handler, no
+# task-table bookkeeping needed until Task 6 moves these onto real tasks.
 MARKER_RE = re.compile(r"\[chunk:([0-9a-f-]{36})\]")
+
+
+def _pseudo_task(inv: Investigation) -> InvestigationTask:
+    return InvestigationTask(
+        investigation_id=inv.id, task_type="synthesize", objective="v1-compat"
+    )
 
 
 def _emit(session: Session, investigation_id: uuid.UUID, event_type: str, payload: dict) -> None:
@@ -65,7 +71,7 @@ def run(session: Session, investigation_id: uuid.UUID) -> Investigation:
     inv.status = "running"
     session.flush()
     _plan_and_collect(session, inv)
-    _draft_and_score(session, inv)
+    orchestrator.synthesize(session, inv, _pseudo_task(inv))
     inv.status = "complete"
     inv.last_refreshed_at = datetime.now(UTC)
     _emit(session, inv.id, "investigation.completed",
@@ -84,7 +90,7 @@ def refresh(session: Session, investigation_id: uuid.UUID) -> Investigation:
     session.flush()
     plan = ResearchPlan.model_validate(inv.plan)
     _collect(session, inv, plan, [uuid.UUID(c) for c in inv.company_ids])
-    _draft_and_score(session, inv)
+    orchestrator.synthesize(session, inv, _pseudo_task(inv))
     inv.status = "complete"
     inv.last_refreshed_at = datetime.now(UTC)
     _emit(session, inv.id, "investigation.refreshed",
@@ -143,54 +149,6 @@ def _collect(
         "records": [_record_payload(r) for r in records],
     })
     session.flush()
-
-
-def _draft_and_score(session: Session, inv: Investigation) -> None:
-    rows = session.scalars(
-        select(Evidence).where(Evidence.investigation_id == inv.id)
-    ).all()
-    if not rows:
-        raise ValueError("no evidence collected; cannot draft a report (ADR-0005)")
-
-    draft, record = drafter.draft(
-        inv.question,
-        [
-            CollectedEvidence(
-                chunk_id=r.chunk_id, document_id=r.document_id, excerpt=r.excerpt,
-                stance=Stance(r.stance), rationale=r.rationale, query=r.query,
-                scores=r.scores, strategy=r.strategy,
-            )
-            for r in rows
-        ],
-    )
-    # citation gate: every marker must reference collected evidence
-    cited = {uuid.UUID(m) for m in MARKER_RE.findall(draft.narrative)}
-    allowed = {r.chunk_id for r in rows}
-    if invented := cited - allowed:
-        raise ValueError(f"draft cites chunks outside the evidence set: {sorted(invented)}")
-    if not cited:
-        raise ValueError("draft narrative carries no citation markers")
-
-    docs = {
-        d.id: d
-        for d in session.scalars(
-            select(Document).where(Document.id.in_({r.document_id for r in rows}))
-        )
-    }
-    breakdown = confidence.compute(list(rows), docs)
-    inv.confidence = breakdown["score"]
-    inv.confidence_breakdown = breakdown
-
-    # reports are versioned history: refresh appends v(n+1), never rewrites v(n)
-    session.add(
-        Report(
-            investigation_id=inv.id, version=inv.version,
-            executive_summary=draft.executive_summary, key_findings=draft.key_findings,
-            risks=draft.risks, follow_up_questions=draft.follow_up_questions,
-            narrative=draft.narrative, model=record.model,
-        )
-    )
-    _emit(session, inv.id, "agent.draft", {"record": _record_payload(record)})
 
 
 def replay_retrieval(session: Session, investigation_id: uuid.UUID) -> dict:
