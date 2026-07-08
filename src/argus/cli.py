@@ -47,7 +47,9 @@ def _setup() -> None:
 def worker() -> None:
     """Run the pipeline worker + connector scheduler (Ctrl-C to stop)."""
     from argus.dataplatform.worker import main_loop
+    from argus.investigations.orchestrator import register
 
+    register()
     main_loop()
 
 

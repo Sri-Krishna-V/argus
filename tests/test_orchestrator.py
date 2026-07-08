@@ -275,6 +275,16 @@ def test_engine_run_via_dag_and_refresh_marks_obsolete(monkeypatch, fake_embeddi
         assert len(tasks) == 2 * len(v1_tasks)
 
 
+def test_register_installs_handler(monkeypatch):
+    from argus.dataplatform import worker
+    from argus.investigations import orchestrator
+
+    monkeypatch.setattr(worker, "EXTRA_HANDLERS", {})
+    orchestrator.register()
+    orchestrator.register()  # idempotent
+    assert worker.EXTRA_HANDLERS[orchestrator.JOB_TYPE] is orchestrator.run_task
+
+
 @requires_db
 def test_replay_matches_per_task(monkeypatch, fake_embeddings, seeded_companies):
     from argus.investigations import engine

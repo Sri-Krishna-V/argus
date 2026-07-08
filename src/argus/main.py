@@ -14,9 +14,11 @@ from fastapi.staticfiles import StaticFiles
 from argus.api.routes import router as api_router
 from argus.core.config import get_settings
 from argus.core.logging import configure_logging, request_id
+from argus.investigations.orchestrator import register as _register_investigation_handler
 from argus.ui.views import router as ui_router
 
 configure_logging(get_settings().log_level)
+_register_investigation_handler()
 app = FastAPI(title="Argus", description="Enterprise Research Operating System")
 app.include_router(api_router)
 app.include_router(ui_router)

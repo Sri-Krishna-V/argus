@@ -947,17 +947,35 @@ def run_task(session: Session, job: Job) -> None:
     try:
         HANDLERS[task.task_type](session, inv, task)
     except Exception as exc:
-        _fail_if_exhausted(job, task.id, inv.id, exc)
+        # Capture ids BEFORE rollback: rollback expires all ORM instances, and
+        # touching `task`/`inv` afterwards would silently re-open a transaction
+        # on this session.
+        exhausted = job.attempts >= job.max_attempts
+        task_id, inv_id = task.id, inv.id
+        _fail_if_exhausted(session, exhausted, task_id, inv_id, exc)
         raise
     task.status = "complete"
     task.error = None
     _advance(session, task)
 
 
-def _fail_if_exhausted(job: Job, task_id: uuid.UUID, inv_id: uuid.UUID, exc: Exception) -> None:
-    """On the final attempt, persist task+investigation failure in a fresh transaction
-    (the caller's session is about to roll back with the re-raised exception)."""
-    if job.attempts < job.max_attempts:
+def _fail_if_exhausted(
+    session: Session, exhausted: bool, task_id: uuid.UUID, inv_id: uuid.UUID, exc: Exception
+) -> None:
+    """On the final attempt, persist task+investigation failure in a fresh transaction.
+
+    `task.status = "running"` was autoflushed to Postgres earlier in this call
+    (any query the handler ran against `session` triggers autoflush), so `session`'s
+    transaction holds a row lock on this task until it ends. Opening a second
+    session and updating the same row WITHOUT rolling back `session` first would
+    self-deadlock: the second session's UPDATE blocks on a lock this call stack
+    holds and won't release until this function returns. Rolling back first also
+    clears any aborted-transaction state (25P02) if `exc` was itself a DB error,
+    which no same-transaction/SAVEPOINT scheme can do. See Fable advisory,
+    2026-07-08.
+    """
+    session.rollback()
+    if not exhausted:
         return
     with session_scope() as s:
         task = s.get(InvestigationTask, task_id)
@@ -993,7 +1011,7 @@ def _advance(session: Session, completed: InvestigationTask) -> None:
             _enqueue_task(session, t)
 ```
 
-Note for the implementer: `_fail_if_exhausted` opens a second session while the caller's is mid-transaction — the UPDATE it issues touches the same task row the failing session has loaded but NOT modified in the failure path (status was set to "running" pre-exception and rolls back), so there is no lock conflict; the job row lock is held by the worker's claim transaction which has already committed by execution time. Test this exact scenario (`test_exhausted_task_fails_investigation` covers it).
+Note for the implementer: this section was revised after an audit caught a real deadlock in the original draft — `_fail_if_exhausted` opens a second session while the caller's session is mid-transaction, and the caller's `task.status = "running"` assignment DOES get autoflushed to Postgres (any query the handler issues against `session` triggers it), taking a row lock the caller's transaction holds until it ends. The fix is `session.rollback()` on the caller's session before the second session touches the same row (now reflected in the code above). Also roll back before checking `exhausted` if the caller's session had a DB error mid-handler — Postgres puts the transaction in an aborted state (25P02) that refuses further statements until rolled back, regardless of lock contention. Test this exact scenario (`test_exhausted_task_fails_investigation` covers it) — the fix must actually exercise a handler that leaves a pending autoflushed write (e.g. calls `session.execute(select(...))` or similar) before raising, or the test won't catch a regression.
 
 - [ ] **Step 5: Run the tests**
 

@@ -214,6 +214,14 @@ def synthesize(session: Session, inv: Investigation, task: InvestigationTask) ->
 HANDLERS = {"collect_evidence": collect_evidence, "synthesize": synthesize}
 
 
+def register() -> None:
+    """Install the investigation.task handler into the worker registry. Called from
+    composition roots (argus.main, argus.cli worker) — never from dataplatform."""
+    from argus.dataplatform import worker
+
+    worker.EXTRA_HANDLERS[JOB_TYPE] = run_task
+
+
 def run_task(session: Session, job: Job) -> None:
     task = session.get(InvestigationTask, uuid.UUID(job.payload["task_id"]))
     if task is None:

@@ -124,6 +124,13 @@ flowchart TD
 Orange steps are the only ones that call an LLM; everything else — retrieval, the citation
 gate, and the confidence score — is deterministic and auditable.
 
+As of V2 Phase 1, this lifecycle is no longer one linear run: `investigations/orchestrator.py`
+compiles the plan into a persisted task DAG (`investigation_tasks` — one `collect_evidence`
+node per query, fanning into one `synthesize` node) and executes it through the jobs outbox
+per [ADR-0010](adr/0010-v2-execution-model.md). The diagram's `retrieve`/`stance` and
+`draft`/`gate`/`confidence` steps are exactly the DAG's two node types; running more workers
+against the same queue parallelizes the fan-out for free.
+
 ## 4. Storage
 
 One Postgres 16 instance serves every layer ([ADR-0002](adr/0002-postgres-for-everything.md)):
@@ -280,7 +287,8 @@ src/argus/
 ├── knowledge/       # repositories, entity resolution, canonical IDs, graph, indexes
 ├── research/        # hybrid retrieval (RRF), timelines, contradiction grouping, citations
 ├── agentruntime/    # adapter.py (only ADK import), planner, evidence collector, drafter
-├── investigations/  # investigation engine, confidence math, reports, staleness detection
+├── investigations/  # investigation engine, orchestrator.py (task DAG + jobs-outbox
+│                    #   execution, ADR-0010), confidence math, reports, staleness detection
 ├── observability/   # pipeline_runs recording + status queries
 ├── api/             # FastAPI JSON routers
 └── ui/              # Jinja2 + HTMX views (workspace, reports, explorer, dashboard)
