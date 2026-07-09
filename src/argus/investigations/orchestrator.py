@@ -76,6 +76,16 @@ def compile_dag(
         raise ValueError("plan has no queries; nothing to investigate")
     k = get_settings().agent_retrieval_k
 
+    # collect_evidence's DELETE-then-reinsert rebuild owns its query text (see
+    # collect_evidence below); nothing upstream enforces distinct query strings, so
+    # dedupe here, at the one place that turns queries into tasks, order-preserving.
+    seen: set[str] = set()
+    queries = []
+    for q in plan.queries:
+        if q.query not in seen:
+            seen.add(q.query)
+            queries.append(q)
+
     collects = [
         InvestigationTask(
             id=uuid.uuid4(),
@@ -91,7 +101,7 @@ def compile_dag(
                 "k": k,
             },
         )
-        for q in plan.queries
+        for q in queries
     ]
     synthesize = InvestigationTask(
         id=uuid.uuid4(),
@@ -284,11 +294,19 @@ def _advance(session: Session, completed: InvestigationTask) -> None:
     the completing task's transaction: the status flip and the follow-on job commit
     atomically (outbox pattern, ADR-0003)."""
     session.flush()
+    # Lock the pending fan-in row(s) so concurrent _advance calls from sibling
+    # workers (ADR-0010: multiple worker processes, same jobs table) serialize on
+    # this row instead of racing on independent READ COMMITTED snapshots — without
+    # this, two siblings completing concurrently can each see the other as "not
+    # complete yet" and both skip enqueueing the dependent. order_by is required for
+    # a deterministic lock-acquisition order across transactions locking >1 row.
     siblings = session.scalars(
         select(InvestigationTask).where(
             InvestigationTask.investigation_id == completed.investigation_id,
             InvestigationTask.status == "pending",
         )
+        .order_by(InvestigationTask.id)
+        .with_for_update()
     ).all()
     statuses = {
         str(t.id): t.status
@@ -323,6 +341,15 @@ def drain(investigation_id: uuid.UUID) -> None:
                     InvestigationTask.status.in_(["pending", "running"]),
                 ).limit(1)
             )
-        if live is None:
+            # A failed investigation can leave a dependent task permanently
+            # "pending" (one of its deps is "failed", never "complete" — it can
+            # never become ready). Without this check the loop above never sees
+            # live == None and spins forever. _finalize does the actual raising.
+            failed = session.scalar(
+                select(Investigation.id).where(
+                    Investigation.id == investigation_id, Investigation.status == "failed"
+                )
+            )
+        if live is None or failed is not None:
             return
         time.sleep(0.1)  # a job exists but isn't claimable yet (backoff or other worker)

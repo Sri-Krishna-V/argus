@@ -286,6 +286,172 @@ def test_register_installs_handler(monkeypatch):
 
 
 @requires_db
+def test_compile_dag_dedupes_duplicate_queries(db_session):
+    """Two PlannedQuery entries with identical query text must collapse to one
+    collect_evidence task (Finding 3): collect_evidence's DELETE-then-reinsert rebuild
+    keys on query text, so a duplicate would silently clobber the other's evidence."""
+    from argus.investigations import engine, orchestrator
+
+    inv = engine.create(db_session, "q")
+    db_session.flush()
+    tasks = orchestrator.compile_dag(
+        db_session, inv, _plan(queries=("q1", "q1", "q2")), company_ids=[]
+    )
+    collects = [t for t in tasks if t.task_type == "collect_evidence"]
+    assert len(collects) == 2  # not 3 — the duplicate "q1" is dropped, order preserved
+    assert [t.inputs["query"] for t in collects] == ["q1", "q2"]
+
+
+@requires_db
+def test_advance_fanin_race_is_serialized(db_session):
+    """Finding 1 regression: two collect siblings feeding one synthesize task,
+    completed concurrently from two independent DB sessions/threads (ADR-0010 —
+    parallelism is multiple worker processes against the same jobs table). Without a
+    row lock serializing concurrent _advance calls on the shared pending fan-in node,
+    each sibling's plain SELECT can miss the other's just-committed completion and
+    neither enqueues synthesize. Follows tests/test_stress.py's real-thread,
+    real-session-per-thread convention (not the single-transaction db_session
+    fixture, which can't express cross-transaction concurrency)."""
+    import threading
+    import time as time_mod
+
+    from argus.core.models import Job
+    from argus.investigations import engine, orchestrator
+    from argus.investigations.models import InvestigationTask
+
+    with session_scope() as session:
+        inv = engine.create(session, "q")
+        inv_id = inv.id
+        session.flush()
+        collect1 = InvestigationTask(
+            investigation_id=inv_id, task_type="collect_evidence", objective="x",
+            status="running",
+        )
+        collect2 = InvestigationTask(
+            investigation_id=inv_id, task_type="collect_evidence", objective="x",
+            status="running",
+        )
+        session.add_all([collect1, collect2])
+        session.flush()
+        synth = InvestigationTask(
+            investigation_id=inv_id, task_type="synthesize", objective="x",
+            depends_on=[str(collect1.id), str(collect2.id)],
+        )
+        session.add(synth)
+        session.flush()
+        collect1_id, collect2_id, synth_id = collect1.id, collect2.id, synth.id
+
+    a_advanced = threading.Event()
+    release = threading.Event()
+
+    def thread_a():
+        with session_scope() as s:
+            c1 = s.get(InvestigationTask, collect1_id)
+            c1.status = "complete"
+            orchestrator._advance(s, c1)
+            a_advanced.set()
+            release.wait(timeout=10)  # hold the fan-in row lock until told to commit
+
+    def thread_b():
+        with session_scope() as s:
+            c2 = s.get(InvestigationTask, collect2_id)
+            c2.status = "complete"
+            orchestrator._advance(s, c2)  # blocks here on the row lock, with the fix
+
+    ta = threading.Thread(target=thread_a)
+    ta.start()
+    assert a_advanced.wait(timeout=5), "thread A never reached _advance"
+
+    tb = threading.Thread(target=thread_b)
+    tb.start()
+
+    # Bounded poll: stop as soon as B is observably blocked on a lock, or has
+    # already finished (the unfixed-code case: no lock, B races through fast).
+    deadline = time_mod.monotonic() + 5
+    with session_scope() as poll_session:
+        while time_mod.monotonic() < deadline:
+            blocked = poll_session.execute(
+                sa.text(
+                    "select count(*) from pg_stat_activity "
+                    "where wait_event_type = 'Lock' and datname = current_database()"
+                )
+            ).scalar()
+            poll_session.rollback()
+            if blocked or not tb.is_alive():
+                break
+            time_mod.sleep(0.05)
+
+    release.set()
+    ta.join(timeout=10)
+    tb.join(timeout=10)
+    assert not ta.is_alive(), "thread A did not finish — deadlock regression"
+    assert not tb.is_alive(), "thread B did not finish — deadlock regression"
+
+    with session_scope() as session:
+        synth_jobs = [
+            j for j in session.scalars(
+                sa.select(Job).where(Job.job_type == orchestrator.JOB_TYPE)
+            ).all()
+            if j.payload.get("task_id") == str(synth_id)
+        ]
+        assert len(synth_jobs) == 1
+
+
+@requires_db
+def test_drain_returns_when_dependent_stuck_on_failed_task(db_session, monkeypatch):
+    """Finding 2 regression: a failed collect_evidence task leaves its dependent
+    synthesize task permanently 'pending' (it can never see all deps == 'complete').
+    drain()'s only exit condition was 'no pending/running tasks left' — with a stuck
+    dependent that never holds, so it must also exit when the investigation itself has
+    failed. Includes a second, successfully-completing sibling so the fix can't be
+    satisfied by short-circuiting before other legitimate work finishes."""
+    import threading
+
+    from argus.investigations import engine, orchestrator
+    from argus.investigations.models import Investigation, InvestigationTask
+
+    def flaky_collect(session, inv, task):
+        if task.inputs["query"] == "fail":
+            raise RuntimeError("boom")
+        task.outputs = {"chunk_ids": [], "evidence_count": 0}
+
+    monkeypatch.setitem(orchestrator.HANDLERS, "collect_evidence", flaky_collect)
+
+    with session_scope() as session:
+        inv = engine.create(session, "q")
+        inv_id = inv.id
+        orchestrator.compile_dag(
+            session, inv, _plan(queries=("fail", "ok")), company_ids=[]
+        )
+
+    result: dict = {}
+
+    def _drain():
+        orchestrator.drain(inv_id)
+        result["done"] = True
+
+    t = threading.Thread(target=_drain)
+    t.start()
+    t.join(timeout=10)
+    assert not t.is_alive(), "drain() hung — Finding 2 regression"
+    assert result.get("done") is True
+
+    with session_scope() as session:
+        inv = session.get(Investigation, inv_id)
+        assert inv.status == "failed"
+        tasks = session.scalars(
+            sa.select(InvestigationTask)
+            .where(InvestigationTask.investigation_id == inv_id)
+        ).all()
+        fail_task = next(t for t in tasks if t.inputs.get("query") == "fail")
+        ok_task = next(t for t in tasks if t.inputs.get("query") == "ok")
+        synth_task = next(t for t in tasks if t.task_type == "synthesize")
+        assert fail_task.status == "failed"
+        assert ok_task.status == "complete"  # the sibling's legitimate work finished
+        assert synth_task.status == "pending"  # stuck forever — expected, not a bug
+
+
+@requires_db
 def test_replay_matches_per_task(monkeypatch, fake_embeddings, seeded_companies):
     from argus.investigations import engine
     from tests.conftest import drain_queue, ingest_html
