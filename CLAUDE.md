@@ -71,4 +71,10 @@ CLI: `argus status | search | ingest | reprocess | retry-dead | eval | worker` (
 - WSL2: if port 5432 conflicts, DB may run on 15432 — check `.env` / docker-compose.
 - Task readiness in `investigation_tasks` is **derived on read** from dependency states,
   never stored (migration 0006) — don't add a "ready" column.
+- `orchestrator._advance()`'s fan-in readiness check takes `.with_for_update()` on the
+  pending sibling row(s) it evaluates — required because two workers can complete
+  sibling tasks concurrently (ADR-0010) and, without the lock, each can see the other
+  as "not complete yet" under READ COMMITTED, so neither enqueues the dependent (see
+  ARCHITECTURE.md §3 "Fan-in concurrency safety", commit 85d5452). Don't remove it to
+  "simplify" the query.
 - Connectors: SEC fetches allowlisted to `*.sec.gov`; downloads capped at ARGUS_MAX_FETCH_BYTES.

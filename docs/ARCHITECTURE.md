@@ -131,6 +131,28 @@ per [ADR-0010](adr/0010-v2-execution-model.md). The diagram's `retrieve`/`stance
 `draft`/`gate`/`confidence` steps are exactly the DAG's two node types; running more workers
 against the same queue parallelizes the fan-out for free.
 
+**Fan-in concurrency safety.** `_advance()` decides whether a dependent node (e.g.
+`synthesize`) is ready by re-reading its dependencies' statuses. Under ADR-0010's
+"more workers, same queue" model, two `collect_evidence` siblings can complete on two
+different workers at the same instant — each in its own transaction, under Postgres's
+default READ COMMITTED isolation, where a plain `SELECT` only sees what's already
+committed. Without synchronization, both workers' readiness checks can each see the
+*other's* sibling as "not complete yet" and both skip enqueueing the dependent — which
+then sits `pending` forever with no job in the outbox and nothing left to re-trigger
+it, hanging the synchronous `drain()` loop that `engine.run()`/`refresh()` calls from
+a user-facing request. `_advance()` closes this by taking `.with_for_update()` (with a
+deterministic `.order_by(id)`) on the pending-task row(s) it's evaluating, serializing
+concurrent `_advance` calls onto the shared dependent row; the last one to commit is
+guaranteed to see every sibling's completed status and enqueues exactly once. A
+companion gap — `drain()` polling forever when a dependent is permanently stuck
+`pending` because a *different* sibling failed outright (not a race, just an
+unreachable dependency) — is closed by having `drain()` also exit when
+`Investigation.status == "failed"`, letting `_finalize()`'s existing check do the
+raising. Regression tests for both: `tests/test_orchestrator.py::test_advance_fanin_race_is_serialized`
+(two real threads/sessions, asserts exactly one enqueue) and
+`test_drain_returns_when_dependent_stuck_on_failed_task` (bounded-timeout thread join,
+so a regression fails the test instead of hanging the suite).
+
 ## 4. Storage
 
 One Postgres 16 instance serves every layer ([ADR-0002](adr/0002-postgres-for-everything.md)):
