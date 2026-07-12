@@ -1,4 +1,5 @@
 import type { Investigation } from "@/lib/types"
+import { SignalRidge } from "@/components/signal-ridge"
 
 const LABELS: Record<string, string> = {
   source_diversity: "Source diversity",
@@ -11,23 +12,20 @@ const LABELS: Record<string, string> = {
 export function ConfidenceMeter({ inv }: { inv: Investigation }) {
   const components = inv.confidence_breakdown?.components ?? {}
   return (
-    <div className="flex flex-col gap-2">
-      <div className="flex items-center gap-3">
-        <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
-          <div
-            className="h-full bg-primary"
-            style={{ width: `${Math.round((inv.confidence ?? 0) * 100)}%` }}
-          />
+    <div className="flex flex-col gap-4">
+      <div className="relative h-16 overflow-hidden rounded-md">
+        <SignalRidge className="absolute inset-0 h-full w-full" amplitude={inv.confidence ?? 0} />
+        <div className="absolute inset-0 flex items-center justify-end pr-4">
+          <span className="text-2xl font-light text-white">
+            {inv.confidence !== null ? `${Math.round(inv.confidence * 100)}%` : "—"}
+          </span>
         </div>
-        <span className="text-sm font-medium">
-          {inv.confidence !== null ? `${Math.round(inv.confidence * 100)}%` : "—"}
-        </span>
       </div>
-      <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-xs text-muted-foreground">
+      <div className="grid grid-cols-2 gap-x-6 gap-y-1 font-mono text-xs">
         {Object.entries(components).map(([key, value]) => (
           <div key={key} className="flex justify-between">
-            <span>{LABELS[key] ?? key}</span>
-            <span>{Math.round(value * 100)}%</span>
+            <span className="text-muted-foreground">{LABELS[key] ?? key}</span>
+            <span className="text-white">{Math.round(value * 100)}%</span>
           </div>
         ))}
       </div>

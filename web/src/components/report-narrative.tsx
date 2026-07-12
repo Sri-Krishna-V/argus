@@ -27,12 +27,12 @@ export function ReportNarrative({ narrative, citations }: { narrative: string; c
     <div className="flex flex-col gap-4">
       <p className="whitespace-pre-wrap leading-relaxed">{parts}</p>
       {citations.length > 0 && (
-        <ol className="flex flex-col gap-1 text-sm text-muted-foreground">
+        <ol className="flex flex-col gap-1 font-mono text-xs text-muted-foreground">
           {citations.map((c) => (
             <li key={c.chunk_id} id={`cite-${c.index}`}>
-              [{c.index}]{" "}
+              <span className="text-primary">[{c.index}]</span>{" "}
               {c.url ? (
-                <a href={c.url} target="_blank" rel="noreferrer" className="text-primary hover:underline">
+                <a href={c.url} target="_blank" rel="noreferrer" className="hover:text-primary hover:underline">
                   {c.title ?? c.url}
                 </a>
               ) : (

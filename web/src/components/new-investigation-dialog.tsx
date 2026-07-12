@@ -41,13 +41,18 @@ export function NewInvestigationDialog() {
           render prop instead of the brief's Radix-style `asChild` (see DialogClose
           usage in dialog.tsx for the same convention). */}
       <DialogTrigger render={<Button>New investigation</Button>} />
-      <DialogContent>
+      <DialogContent className="border border-border bg-white/[0.03] bg-popover">
         <DialogHeader>
-          <DialogTitle>New investigation</DialogTitle>
+          <DialogTitle className="font-light tracking-tight">New investigation</DialogTitle>
         </DialogHeader>
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-2">
-            <Label htmlFor="question">Question</Label>
+            <Label
+              htmlFor="question"
+              className="font-mono text-[11px] tracking-[0.14em] text-muted-foreground uppercase"
+            >
+              Question
+            </Label>
             <Textarea
               id="question"
               value={question}
@@ -57,7 +62,12 @@ export function NewInvestigationDialog() {
             />
           </div>
           <div className="flex flex-col gap-2">
-            <Label htmlFor="hypothesis">Hypothesis (optional)</Label>
+            <Label
+              htmlFor="hypothesis"
+              className="font-mono text-[11px] tracking-[0.14em] text-muted-foreground uppercase"
+            >
+              Hypothesis (optional)
+            </Label>
             <Input
               id="hypothesis"
               value={hypothesis}
