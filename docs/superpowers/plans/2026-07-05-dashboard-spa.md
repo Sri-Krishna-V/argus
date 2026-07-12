@@ -19,6 +19,93 @@
 
 ---
 
+## Revision 2 — 2026-07-12: Radiant visual direction + V2 task DAG
+
+**Status at revision time:** Tasks 1–3 merged to main; Tasks 4–8 committed on
+`worktree-frontend-revamp` (c8d5f74…98e701e). `main` (V2 Phase 1 task DAG) merged into the
+branch 2026-07-12, which adds `GET /api/investigations/{id}/tasks`.
+
+**Plan changes:**
+
+1. **ADR renumber** — Task 14 writes **ADR-0013** (0010–0012 were taken by V2 Phase 0).
+2. **Dark-only UI** — the visual identity commits to dark. Task 8b deletes `lib/theme.ts`
+   and the header toggle; `<html class="dark">` is hard-coded in `index.html`.
+3. **New Task 8b (Radiant visual system) and Task 8c (task DAG panel)**, specified below.
+   Tasks 9–11 must build on 8b's tokens and components — the code samples in their original
+   specs are behavioral references, not styling references.
+
+### Visual direction — "Radiant"
+
+The reference is a near-black field crossed by two ridges of dense 1px vertical strokes —
+cool steel-blue light with one warm ember hotspot — and a minimal white geometric wordmark.
+For Argus this texture is literal, not decorative: dense vertical strokes = document chunks,
+the ridge rising out of them = signal extracted from noise, the ember crest = confidence.
+
+**Palette (exact values, wired into the existing shadcn CSS variables in `index.css`):**
+
+| token | value | role |
+|---|---|---|
+| `--background` | `#06080D` | void — page background, blue-cast near-black |
+| `--card` / `--popover` | `#0C1017` | raised surface; panels additionally get `bg-white/[0.03]` glass tint |
+| `--border` / `--input` | `rgba(148,163,184,0.14)` | hairline steel |
+| `--foreground` | `#EEF2F8` | primary text |
+| `--muted-foreground` | `#8DA0BA` | steel — secondary text, cool ridge color |
+| `--primary` | `#E8A57F` | ember — the only warm thing on screen; active states, confidence, links |
+| ember glow (chart/canvas only) | `#F4C29A` | ridge crest hotspot |
+| `--destructive` | `#C97B6E` | muted clay |
+
+Ember is spent sparingly: nav active state, confidence, primary buttons, citation markers,
+the ridge hotspot. Everything else is steel-on-void.
+
+**Type:** Geist Variable (installed) stays the body face. Add `@fontsource-variable/geist-mono`
+as the utility face: ALL eyebrows, nav items, status labels, table headers, and data values are
+mono, uppercase, `text-[11px]`, `tracking-[0.14em]`, steel. Display headings are Geist at
+weight 300, large, `tracking-tight` — the Radiant wordmark look. No third face.
+
+**Signature element:** `SignalRidge` — one canvas component drawing dense vertical 1px strokes
+whose heights follow layered sine ridges; strokes colored by a steel gradient with an ember
+hotspot around the crest. Slow horizontal drift (respects `prefers-reduced-motion`: renders one
+static frame). Two uses only: (a) full-bleed hero band behind the investigations list header,
+(b) `amplitude` prop driven by confidence as a thin band on the detail page (replacing the
+plain progress bar inside `ConfidenceMeter`). Nothing else animates.
+
+**Chrome:** sidebar keeps its structure but goes void-black with hairline right border; ARGUS
+wordmark in white Geist 300 with a small 4-point-star SVG glyph (the image's asterisk mark) in
+ember; nav items mono-uppercase steel, active = white text + ember star bullet. Status chips
+become mono text with a small colored dot (ember = running/pending, steel = complete, clay =
+failed/dead) instead of filled badges. Cards are glass: `bg-white/[0.03]`, hairline border,
+`rounded-lg`, no shadows.
+
+### Task 8b: Radiant visual system
+
+**Files:**
+- Modify: `web/src/index.css` (tokens above), `web/index.html` (`class="dark"` on `<html>`)
+- Modify: `web/src/components/app-shell.tsx` (chrome above; delete toggle)
+- Create: `web/src/components/signal-ridge.tsx` (canvas; `height`, `amplitude?`, `className?` props)
+- Create: `web/src/components/status-dot.tsx` (status → dot + mono label mapping, reused everywhere)
+- Modify: `web/src/routes/index.tsx`, `web/src/routes/investigations.$investigationId.tsx`,
+  `web/src/components/{confidence-meter,new-investigation-dialog,report-narrative}.tsx` — restyle to tokens
+- Delete: `web/src/lib/theme.ts`
+- Add dep: `@fontsource-variable/geist-mono`
+
+Verify: `npx tsc --noEmit && npm run build`; dev-server visual check.
+
+### Task 8c: Task DAG panel (V2)
+
+**Files:**
+- Create: `web/src/components/task-dag.tsx`
+- Modify: `web/src/routes/investigations.$investigationId.tsx`, `web/src/lib/types.ts`
+
+Consumes `GET /api/investigations/{id}/tasks` →
+`{tasks: [{id, task_type, objective, specialist, depends_on: string[], status, outputs, error, created_at}]}`.
+Render as a topologically-layered column flow (no graph lib — group tasks by dependency depth,
+one column per depth, hairline connectors between dependent cards). Each card: mono task_type
+eyebrow, objective text, specialist, `StatusDot`. Poll with `refetchInterval: 5_000` while any
+task is pending/running. Hide the panel entirely when `tasks` is empty (V1 investigations).
+Failed tasks show `error` in clay. A 404 from the endpoint must not break the page.
+
+---
+
 ### Task 1: Report endpoint returns numbered, guarded citations
 
 **Files:**
