@@ -66,9 +66,10 @@ CLI: `argus status | search | ingest | reprocess | retry-dead | eval | worker` (
 
 ## Gotchas
 
-- CI (`.github/workflows/ci.yml`) runs pytest against a pgvector service, ruff + lint-imports,
-  and the web typecheck/build on every PR; pushes to main also publish the Docker image to GHCR.
-  Still run `make test && make lint` locally before pushing.
+- CI (`.github/workflows/ci.yml`) is the test gate: every push runs pytest against a pgvector
+  service, ruff + lint-imports, the web typecheck/build, and a Docker build check; pushes to
+  main also publish the image to GHCR. Local `make test` needs Docker running — optional when
+  disk/Docker is unavailable; push a branch and let Actions run instead.
 - Empty ARGUS_API_KEY = dev mode (no auth); non-empty enables constant-time bearer check.
 - WSL2: if port 5432 conflicts, DB may run on 15432 — check `.env` / docker-compose.
 - Task readiness in `investigation_tasks` is **derived on read** from dependency states,
