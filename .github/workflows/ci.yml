@@ -27,6 +27,13 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      # The SPA-serving smoke tests need web/dist to exist for the fallback route to register
+      - run: npm ci --prefix web && npm run build --prefix web
       - run: uv sync --frozen
       - name: Fail fast if Postgres is unreachable (conftest would silently skip DB tests)
         run: uv run python -c "import sqlalchemy as sa; sa.create_engine('postgresql+psycopg://argus:argus@localhost:5432/argus').connect()"
