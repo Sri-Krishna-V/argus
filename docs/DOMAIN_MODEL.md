@@ -22,6 +22,7 @@ erDiagram
     investigations ||--o{ evidence : "collects"
     investigations ||--o{ reports : "produces versions"
     investigations ||--o{ investigation_events : "replay trail"
+    investigations ||--o{ investigation_tasks : "compiles to DAG"
     hypotheses ||--o{ evidence : "supported/contradicted by"
 ```
 
@@ -46,6 +47,7 @@ are included here because every derived row above traces back to one.
 | **Timeline Event** | research | derived from `documents.published_at` + graph | Computed, not stored: entity-scoped documents/events ordered by publication time. |
 | **Research Report** | investigations | `reports` (Phase 7) | Structured artifact (exec summary, findings, both stance sections, confidence breakdown, citations). Immutable once generated; regeneration creates a new version. |
 | **Research Session** | investigations | `investigation_events` (Phase 7) | Append-only execution history: prompts, retrieval strategy + version, model versions, retrieved document IDs. The replay record. |
+| **Investigation Task** | investigations | `investigation_tasks` (V2 Phase 1) | One DAG node compiled from the research plan: `task_type` (`collect_evidence` \| `synthesize`), `objective`, `depends_on` (prerequisite task UUIDs), `status` (`pending → running → complete \| failed \| obsolete`), `inputs`/`outputs`. Executed through the jobs outbox — `job.document_id` carries the investigation id, `job.payload` the task id (ADR-0010). |
 
 ## Infrastructure records (core / observability)
 
@@ -68,6 +70,10 @@ are included here because every derived row above traces back to one.
 5. **Canonical IDs** — one company per CIK; mentions resolve to canonical IDs or stay
    unresolved (never to duplicates).
 6. **Embedding provenance** — every embedded chunk records its embedding model + version.
+7. **Task readiness is derived, never stored** — an `investigation_task` becomes eligible to
+   run only when every id in its `depends_on` list resolves to a `complete` task; this is
+   computed on read (`orchestrator._advance`, `run_task`) from the dependencies' live
+   `status`, not cached on the row, so it cannot drift out of sync with reality.
 
 ## Deliberate V1 simplifications
 

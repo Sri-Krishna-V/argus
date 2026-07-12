@@ -13,8 +13,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from argus.core.config import get_settings
-from argus.investigations.engine import MARKER_RE
 from argus.investigations.models import Evidence, Report
+from argus.investigations.orchestrator import MARKER_RE
 from argus.knowledge.models import Company, Document, DocumentCompany
 from argus.observability.models import EvalRun
 from argus.research.retrieval import search

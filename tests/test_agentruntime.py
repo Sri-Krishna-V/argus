@@ -186,3 +186,42 @@ def test_adapter_live_smoke():
         "plan", planner.INSTRUCTION, "How is NVIDIA's data center business?", ResearchPlan
     )
     assert plan.queries and record.model and record.duration_ms >= 0
+
+
+def test_research_plan_upgrades_v1_string_queries():
+    from argus.agentruntime.schemas import PlannedQuery, ResearchPlan
+
+    plan = ResearchPlan.model_validate(
+        {"companies": ["NVIDIA CORP"], "doc_types": ["news"],
+         "queries": ["data center revenue", "automotive growth"], "rationale": "r"}
+    )
+    assert plan.investigation_type == "general"
+    assert plan.queries == [
+        PlannedQuery(query="data center revenue", objective=""),
+        PlannedQuery(query="automotive growth", objective=""),
+    ]
+
+
+def test_research_plan_round_trips_typed_queries():
+    from argus.agentruntime.schemas import ResearchPlan
+
+    plan = ResearchPlan.model_validate(
+        {"investigation_type": "earnings_analysis", "objective": "assess Q3",
+         "companies": [], "doc_types": [],
+         "queries": [{"query": "q3 margins", "objective": "margin trend"}],
+         "rationale": "r"}
+    )
+    dumped = plan.model_dump(mode="json")
+    assert ResearchPlan.model_validate(dumped) == plan
+    assert dumped["queries"][0]["objective"] == "margin trend"
+
+
+def test_research_plan_rejects_empty_query_text():
+    import pytest
+
+    from argus.agentruntime.schemas import ResearchPlan
+
+    with pytest.raises(ValueError):
+        ResearchPlan.model_validate(
+            {"companies": [], "doc_types": [], "queries": [""], "rationale": "r"}
+        )

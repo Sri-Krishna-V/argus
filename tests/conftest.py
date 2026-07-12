@@ -68,6 +68,18 @@ def db_session(migrated_db):
         session.rollback()
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _investigation_task_handler():
+    """engine.run/refresh (Task 6) drain investigation.task jobs through the outbox
+    in-process, so the dispatcher must be registered wherever they run — including
+    every test. Production composition-root wiring (orchestrator.register(), called
+    from cli.py/main.py) is V2 Phase 1 Task 8; this stands in for it until then."""
+    from argus.dataplatform import worker
+    from argus.investigations import orchestrator
+
+    worker.EXTRA_HANDLERS[orchestrator.JOB_TYPE] = orchestrator.run_task
+
+
 @pytest.fixture
 def fake_embeddings(monkeypatch):
     from argus.dataplatform import embeddings
@@ -134,10 +146,29 @@ def ingest_html(html: str, **ref_overrides):
 
 
 def drain_queue(limit: int = 200) -> int:
+    """Run jobs until the queue is empty. A claim can transiently miss while pending
+    jobs exist (the WSL2 wall clock steps backward, briefly putting run_after in the
+    future), so a miss only ends the drain once pending jobs stay unclaimable for 3s —
+    long enough to outlast observed ~1.8s steps, short enough not to stall failure-path
+    tests whose retries back off 60s."""
+    import time
+
+    from argus.core.db import session_scope
+    from argus.core.models import Job
     from argus.dataplatform.worker import run_once
 
     ran = 0
-    while run_once():
-        ran += 1
-        assert ran < limit, "queue did not drain"
-    return ran
+    patience = time.monotonic() + 3
+    while True:
+        if run_once():
+            ran += 1
+            assert ran < limit, "queue did not drain"
+            patience = time.monotonic() + 3
+            continue
+        with session_scope() as session:
+            pending = session.scalar(
+                sa.select(sa.func.count()).select_from(Job).where(Job.status == "pending")
+            )
+        if not pending or time.monotonic() > patience:
+            return ran
+        time.sleep(0.05)

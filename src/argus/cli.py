@@ -47,7 +47,9 @@ def _setup() -> None:
 def worker() -> None:
     """Run the pipeline worker + connector scheduler (Ctrl-C to stop)."""
     from argus.dataplatform.worker import main_loop
+    from argus.investigations.orchestrator import register
 
+    register()
     main_loop()
 
 
@@ -169,9 +171,7 @@ def retry_dead(
     yes: bool = typer.Option(False, "--yes", help="skip confirmation when retrying all"),
 ) -> None:
     """Reset dead (poison) jobs back to pending for another attempt."""
-    from datetime import UTC, datetime
-
-    from sqlalchemy import update
+    from sqlalchemy import func, update
 
     from argus.core.models import Job
 
@@ -187,7 +187,7 @@ def retry_dead(
                 typer.confirm("retry all dead jobs?", abort=True)
             stmt = update(Job).where(Job.status == "dead")
         result = session.execute(
-            stmt.values(status="pending", attempts=0, run_after=datetime.now(UTC))
+            stmt.values(status="pending", attempts=0, run_after=func.now())
         )
         style = "ok" if result.rowcount else "muted"
         console.print(f"retried [{style}]{result.rowcount}[/{style}] job(s)")

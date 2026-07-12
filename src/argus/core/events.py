@@ -2,8 +2,9 @@
 transaction: state change, event, and follow-on job commit atomically or not at all."""
 
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 
+from sqlalchemy import ColumnElement, func
 from sqlalchemy.orm import Session
 
 from argus.core.models import Event, Job
@@ -41,17 +42,20 @@ def enqueue(
     run_after: datetime | None = None,
 ) -> Job:
     """Enqueue a job not derived from a new event (scheduler ticks, reprocessing)."""
+    # DB clock, not client clock: the database is the queue's single time authority,
+    # so client clock skew (multi-host workers, WSL2 backward steps) can't make a
+    # freshly enqueued job look "not yet due" to claim_next
     job = Job(
         job_type=job_type,
         document_id=document_id,
         payload=payload or {},
-        run_after=run_after or datetime.now(UTC),
+        run_after=run_after or func.now(),
     )
     session.add(job)
     session.flush()
     return job
 
 
-def retry_at(attempts: int) -> datetime:
+def retry_at(attempts: int) -> ColumnElement[datetime]:
     # ponytail: fixed exponential backoff (30s * 2^n), jitter when workers multiply
-    return datetime.now(UTC) + timedelta(seconds=30 * 2**attempts)
+    return func.now() + timedelta(seconds=30 * 2**attempts)

@@ -4,9 +4,11 @@ scheduler. Scale-out = run more worker processes; claiming is already safe."""
 
 import logging
 import time
+import uuid
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from argus.core import events
@@ -22,18 +24,27 @@ from argus.observability.models import PipelineRun
 
 log = logging.getLogger(__name__)
 
+# Extension point: the composition root (argus.cli) registers handlers for job types
+# owned by layers ABOVE dataplatform (e.g. "investigation.task" → investigations).
+# dataplatform never imports upward (layer contract); it only calls what was injected.
+EXTRA_HANDLERS: dict[str, Callable[[Session, Job], None]] = {}
 
-def claim_next(session: Session) -> Job | None:
-    job = session.scalars(
+
+def claim_next(session: Session, document_id: uuid.UUID | None = None) -> Job | None:
+    # all queue time predicates use the DB clock (see events.enqueue) — never the client's
+    q = (
         select(Job)
-        .where(Job.status == "pending", Job.run_after <= datetime.now(UTC))
+        .where(Job.status == "pending", Job.run_after <= func.now())
         .order_by(Job.id)
         .limit(1)
         .with_for_update(skip_locked=True)
-    ).first()
+    )
+    if document_id is not None:
+        q = q.where(Job.document_id == document_id)
+    job = session.scalars(q).first()
     if job:
         job.status = "running"
-        job.claimed_at = datetime.now(UTC)
+        job.claimed_at = func.now()
         job.attempts += 1
     return job
 
@@ -48,8 +59,8 @@ def reap_stale(session: Session) -> int:
     lease = timedelta(seconds=get_settings().job_lease_seconds)
     result = session.execute(
         update(Job)
-        .where(Job.status == "running", Job.claimed_at < datetime.now(UTC) - lease)
-        .values(status="pending", run_after=datetime.now(UTC))
+        .where(Job.status == "running", Job.claimed_at < func.now() - lease)
+        .values(status="pending", run_after=func.now())
         .returning(Job.id)
     )
     ids = result.scalars().all()
@@ -62,14 +73,18 @@ def _execute(session: Session, job: Job) -> None:
     if job.job_type in pipeline.STAGES:
         version = job.payload.get("pipeline_version", get_settings().pipeline_version)
         pipeline.run_stage(session, job.job_type, job.document_id, version)
+    elif job.job_type in EXTRA_HANDLERS:
+        EXTRA_HANDLERS[job.job_type](session, job)
     else:
         raise ValueError(f"unknown job type {job.job_type}")
 
 
-def run_once() -> bool:
-    """Claim and run one job. Returns False when the queue is empty."""
+def run_once(document_id: uuid.UUID | None = None) -> bool:
+    """Claim and run one job, optionally filtered to one aggregate (investigations'
+    drain() runs one investigation's jobs in-process this way). Returns False when
+    no matching job is claimable."""
     with session_scope() as session:
-        job = claim_next(session)
+        job = claim_next(session, document_id=document_id)
         if job is None:
             return False
         job_id, job_type, doc_id, attempt = job.id, job.job_type, job.document_id, job.attempts

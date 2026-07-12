@@ -4,6 +4,11 @@
 
 **Version:** 0.1 (Foundational Draft)
 
+> **V2 scope lives in [PRD-V2.md](PRD-V2.md)** (Research Execution Engine: investigation
+> planning, task DAGs, knowledge intelligence, specialist agents). This document remains
+> the V1 foundation it was built against. Execution mapping: ADR-0010/0011/0012 and
+> `superpowers/specs/2026-07-06-v2-research-execution-engine-design.md`.
+
 ---
 
 # 1. Executive Summary

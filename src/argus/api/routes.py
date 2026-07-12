@@ -12,12 +12,13 @@ from sqlalchemy.orm import Session
 
 from argus.core.db import session_scope
 from argus.core.models import Job
-from argus.investigations import engine
+from argus.investigations import engine, orchestrator
 from argus.investigations.models import (
     Evidence,
     Hypothesis,
     Investigation,
     InvestigationLink,
+    InvestigationTask,
     Report,
 )
 from argus.knowledge.models import Company, Document
@@ -200,11 +201,32 @@ def get_evidence(
     ]
 
 
+@router.get("/api/investigations/{investigation_id}/tasks")
+def get_tasks(investigation_id: uuid.UUID, session: Session = Depends(get_db)) -> dict:
+    _get_or_404(session, investigation_id)
+    rows = session.scalars(
+        select(InvestigationTask)
+        .where(InvestigationTask.investigation_id == investigation_id)
+        .order_by(InvestigationTask.created_at, InvestigationTask.id)
+    ).all()
+    return {
+        "tasks": [
+            {
+                "id": t.id, "task_type": t.task_type, "objective": t.objective,
+                "specialist": t.specialist, "depends_on": t.depends_on,
+                "status": t.status, "outputs": t.outputs, "error": t.error,
+                "created_at": t.created_at,
+            }
+            for t in rows
+        ]
+    }
+
+
 def _report_citations(session: Session, narrative: str) -> list[dict]:
     """Numbered, first-appearance-order citations for [chunk:<uuid>] markers.
     Only http(s) URLs are kept — a stored javascript: URI must never become a link."""
     order: list[uuid.UUID] = []
-    for m in engine.MARKER_RE.finditer(narrative):
+    for m in orchestrator.MARKER_RE.finditer(narrative):
         cid = uuid.UUID(m.group(1))
         if cid not in order:
             order.append(cid)
@@ -262,12 +284,7 @@ def replay_investigation(
     investigation_id: uuid.UUID, session: Session = Depends(get_db)
 ) -> dict:
     _get_or_404(session, investigation_id)
-    result = engine.replay_retrieval(session, investigation_id)
-    return {
-        "match": result["match"],
-        "recorded_count": len(result["recorded"]),
-        "replayed_count": len(result["replayed"]),
-    }
+    return engine.replay_retrieval(session, investigation_id)
 
 
 @router.post("/api/investigations/{investigation_id}/links", status_code=201)
@@ -325,7 +342,7 @@ def retry_job(job_id: int, session: Session = Depends(get_db)) -> dict:
         raise HTTPException(404, "no dead job with that id")
     job.status = "pending"
     job.attempts = 0
-    job.run_after = datetime.now(UTC)
+    job.run_after = func.now()
     return {"retried": True}
 
 

@@ -6,10 +6,14 @@ from argus.agentruntime.schemas import ExecutionRecord, ResearchPlan
 
 INSTRUCTION = """You are a research planner for a company-research platform.
 Given a research question, produce a retrieval plan:
+- investigation_type: one of company_research, industry_analysis, executive_profiling,
+  risk_assessment, event_investigation, earnings_analysis, competitive_analysis, general
+- objective: one sentence stating what the investigation must determine
 - companies: company names central to the question, as canonically written
   (e.g. "NVIDIA CORP", "Apple Inc.")
 - doc_types: the subset of ["news", "filing"] worth searching
-- queries: 3-6 short keyword retrieval queries that together cover the question
+- queries: 3-6 short keyword retrieval queries; each carries an objective explaining
+  what evidence it targets
 - rationale: one paragraph on why these targets and queries
 Plan only. Do not answer the question."""
 
