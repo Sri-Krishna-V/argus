@@ -10,12 +10,18 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SearchRouteImport } from './routes/search'
+import { Route as PipelineRouteImport } from './routes/pipeline'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as InvestigationsInvestigationIdRouteImport } from './routes/investigations.$investigationId'
 
 const SearchRoute = SearchRouteImport.update({
   id: '/search',
   path: '/search',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PipelineRoute = PipelineRouteImport.update({
+  id: '/pipeline',
+  path: '/pipeline',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -32,30 +38,39 @@ const InvestigationsInvestigationIdRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/pipeline': typeof PipelineRoute
   '/search': typeof SearchRoute
   '/investigations/$investigationId': typeof InvestigationsInvestigationIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/pipeline': typeof PipelineRoute
   '/search': typeof SearchRoute
   '/investigations/$investigationId': typeof InvestigationsInvestigationIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/pipeline': typeof PipelineRoute
   '/search': typeof SearchRoute
   '/investigations/$investigationId': typeof InvestigationsInvestigationIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/search' | '/investigations/$investigationId'
+  fullPaths: '/' | '/pipeline' | '/search' | '/investigations/$investigationId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/search' | '/investigations/$investigationId'
-  id: '__root__' | '/' | '/search' | '/investigations/$investigationId'
+  to: '/' | '/pipeline' | '/search' | '/investigations/$investigationId'
+  id:
+    | '__root__'
+    | '/'
+    | '/pipeline'
+    | '/search'
+    | '/investigations/$investigationId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  PipelineRoute: typeof PipelineRoute
   SearchRoute: typeof SearchRoute
   InvestigationsInvestigationIdRoute: typeof InvestigationsInvestigationIdRoute
 }
@@ -67,6 +82,13 @@ declare module '@tanstack/react-router' {
       path: '/search'
       fullPath: '/search'
       preLoaderRoute: typeof SearchRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/pipeline': {
+      id: '/pipeline'
+      path: '/pipeline'
+      fullPath: '/pipeline'
+      preLoaderRoute: typeof PipelineRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -88,6 +110,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  PipelineRoute: PipelineRoute,
   SearchRoute: SearchRoute,
   InvestigationsInvestigationIdRoute: InvestigationsInvestigationIdRoute,
 }
