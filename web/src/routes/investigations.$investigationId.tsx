@@ -9,6 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { ConfidenceMeter } from "@/components/confidence-meter"
 import { ReportNarrative } from "@/components/report-narrative"
 import { StatusDot } from "@/components/status-dot"
+import { TaskDag } from "@/components/task-dag"
 import { Link } from "@tanstack/react-router"
 
 const GLASS_CARD = "border border-border bg-white/[0.03]"
@@ -113,6 +114,8 @@ function InvestigationDetailPage() {
           </CardContent>
         </Card>
       )}
+
+      <TaskDag investigationId={investigationId} />
 
       {reportQuery.data && (
         <Card className={GLASS_CARD}>

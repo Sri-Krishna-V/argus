@@ -74,6 +74,18 @@ export interface SearchResult {
   strategy: string
 }
 
+export interface InvestigationTask {
+  id: string
+  task_type: string
+  objective: string
+  specialist: string | null
+  depends_on: string[]
+  status: string
+  outputs: unknown
+  error: string | null
+  created_at: string
+}
+
 export interface Job {
   id: number
   job_type: string
