@@ -65,7 +65,6 @@ root_package = "argus"
 name = "Layered architecture (ARCHITECTURE.md §2)"
 type = "layers"
 layers = [
-    "argus.ui",
     "argus.api",
     "argus.evals",
     "argus.investigations",
