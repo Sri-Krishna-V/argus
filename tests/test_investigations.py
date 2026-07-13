@@ -413,19 +413,6 @@ def test_report_404_before_run(client, corpus):
     assert client.get(f"/api/investigations/{inv_id}/report").status_code == 404
 
 
-def test_ui_pages_render(client, monkeypatch, corpus):
-    _fake_adapter(monkeypatch)
-    with session_scope() as session:
-        inv_id = engine.create(session, "UI render check?").id
-    with session_scope() as session:
-        engine.run(session, inv_id)
-
-    assert "Investigation workspace" in client.get("/").text
-    detail = client.get(f"/investigations/{inv_id}").text
-    assert "Executive summary" in detail and "Confidence" in detail
-    assert "cite-1" in detail  # markers rendered as resolvable citation links
-    # LLM narrative is untrusted: raw HTML must arrive escaped, never executable
-    assert "<script>alert(1)</script>" not in detail
-    assert "&lt;script&gt;" in detail
-    assert client.get("/search", params={"q": "GPU demand"}).status_code == 200
-    assert client.get("/pipeline").status_code == 200
+# The htmx UI render test that lived here is gone with src/argus/ui: the SPA shell is
+# static (reachability covered in test_e2e/test_api_features), and the XSS guard moved
+# into the API citations payload (test_report_citation_javascript_url_is_nulled).

@@ -1,0 +1,96 @@
+name: CI
+
+# Runs on every branch push so tests never depend on a local environment;
+# pull_request is kept only for forks (same-repo PRs are covered by the push run).
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: argus
+          POSTGRES_PASSWORD: argus
+          POSTGRES_DB: argus
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U argus -d argus"
+          --health-interval 2s
+          --health-timeout 2s
+          --health-retries 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      # The SPA-serving smoke tests need web/dist to exist for the fallback route to register
+      - run: npm ci --prefix web && npm run build --prefix web
+      - run: uv sync --frozen
+      - name: Fail fast if Postgres is unreachable (conftest would silently skip DB tests)
+        run: uv run python -c "import sqlalchemy as sa; sa.create_engine('postgresql+psycopg://argus:argus@localhost:5432/argus').connect()"
+      - run: uv run ruff check src tests
+      - run: uv run lint-imports
+      - run: uv run pytest -q
+
+  web:
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+
+  # Validates the multi-stage Docker build on every run; pushes to GHCR only from main.
+  # Consumers deploy by pulling ghcr.io/sri-krishna-v/argus:<sha|latest>.
+  image:
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
+    needs: [backend, web]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          tags: |
+            ghcr.io/sri-krishna-v/argus:latest
+            ghcr.io/sri-krishna-v/argus:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

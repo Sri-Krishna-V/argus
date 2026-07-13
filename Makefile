@@ -1,4 +1,4 @@
-.PHONY: up down migrate test lint worker api eval stack stack-down backup restore
+.PHONY: up down migrate test lint worker api eval stack stack-down backup restore web web-dev
 
 up:            ## Start Postgres (pgvector) and wait until healthy
 	docker compose up -d --wait
@@ -21,6 +21,12 @@ worker:        ## Run the pipeline worker + connector scheduler
 
 api:           ## Run the API + UI
 	uv run uvicorn argus.main:app --reload
+
+web:           ## Install web dependencies and build the SPA into web/dist
+	cd web && npm install && npm run build
+
+web-dev:       ## Run the SPA dev server (proxies /api and /health to :8000)
+	cd web && npm run dev
 
 eval:          ## Score retrieval and investigation quality against the golden set
 	uv run argus eval retrieval && uv run argus eval investigation

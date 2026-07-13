@@ -1,4 +1,4 @@
-"""FastAPI composition root: JSON API + server-rendered UI in one app.
+"""FastAPI composition root: JSON API + static React SPA (web/dist) in one app.
 Run: uvicorn argus.main:app (make api)."""
 
 import secrets
@@ -8,23 +8,26 @@ import uuid
 from pathlib import Path
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from argus.api.routes import router as api_router
 from argus.core.config import get_settings
 from argus.core.logging import configure_logging, request_id
 from argus.investigations.orchestrator import register as _register_investigation_handler
-from argus.ui.views import router as ui_router
 
 configure_logging(get_settings().log_level)
 _register_investigation_handler()
 app = FastAPI(title="Argus", description="Enterprise Research Operating System")
 app.include_router(api_router)
-app.include_router(ui_router)
-app.mount(
-    "/static", StaticFiles(directory=Path(__file__).parent / "ui" / "static"), name="static"
-)
+
+_WEB_DIST = Path(__file__).parent.parent.parent / "web" / "dist"
+if _WEB_DIST.is_dir():
+    app.mount("/assets", StaticFiles(directory=_WEB_DIST / "assets"), name="spa-assets")
+
+    @app.get("/{full_path:path}")
+    def spa_fallback(full_path: str):
+        return FileResponse(_WEB_DIST / "index.html")
 
 SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
@@ -35,8 +38,8 @@ SECURITY_HEADERS = {
     ),
 }
 
-# rate-limited routes: the JSON API and the UI form post, both create investigations
-_RATE_LIMITED_PATHS = {"/api/investigations", "/investigations"}
+# rate-limited routes: creating an investigation via the JSON API
+_RATE_LIMITED_PATHS = {"/api/investigations"}
 
 # ponytail: in-process bucket; move to a proxy/redis limiter if multiple API replicas
 _buckets: dict[str, tuple[float, float]] = {}  # client key -> (tokens, last_refill_monotonic)

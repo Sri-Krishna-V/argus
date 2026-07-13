@@ -342,14 +342,6 @@ def test_create_investigation_empty_question_is_422(client):
     assert r.status_code == 422
 
 
-# --- vendored static assets ---
-
-
-def test_static_htmx_is_served(client):
-    r = client.get("/static/htmx.min.js")
-    assert r.status_code == 200
-
-
 # --- citation URL scheme guard ---
 
 
@@ -373,20 +365,6 @@ def _investigation_citing(url: str) -> uuid.UUID:
             narrative=f"See the source [chunk:{chunk_id}].", model="test",
         ))
         return inv.id
-
-
-def test_citation_javascript_url_is_not_rendered_as_a_link(client):
-    inv_id = _investigation_citing("javascript:alert(1)")
-    r = client.get(f"/investigations/{inv_id}")
-    assert r.status_code == 200
-    assert "javascript:" not in r.text
-
-
-def test_citation_http_url_still_renders_as_a_link(client):
-    inv_id = _investigation_citing("https://example.com/good-source")
-    r = client.get(f"/investigations/{inv_id}")
-    assert r.status_code == 200
-    assert 'href="https://example.com/good-source"' in r.text
 
 
 # --- report endpoint: numbered, guarded citations ---
@@ -504,3 +482,16 @@ def test_tasks_endpoint_404s_on_unknown_investigation(fake_embeddings):
 
     client = TestClient(fastapi_app)
     assert client.get(f"/api/investigations/{_uuid.uuid4()}/tasks").status_code == 404
+
+
+# --- SPA serving ---
+
+
+def test_root_is_served(client):
+    r = client.get("/")
+    assert r.status_code == 200
+
+
+def test_unknown_path_falls_back_to_spa_shell(client):
+    r = client.get("/investigations/does-not-exist-as-a-file")
+    assert r.status_code == 200

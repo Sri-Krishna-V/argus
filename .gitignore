@@ -9,3 +9,5 @@ dist/
 backups/
 docker-compose.override.yml
 .superpowers/
+web/node_modules
+web/dist
