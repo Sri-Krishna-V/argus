@@ -285,7 +285,9 @@ def _fail_if_exhausted(
         task = s.get(InvestigationTask, task_id)
         task.status = "failed"
         task.error = f"{type(exc).__name__}: {exc}"
-        s.get(Investigation, inv_id).status = "failed"
+        inv = s.get(Investigation, inv_id)
+        if inv.status != "cancelled":
+            inv.status = "failed"
         _emit(s, inv_id, "task.failed", {"task_id": str(task_id), "error": task.error})
 
 

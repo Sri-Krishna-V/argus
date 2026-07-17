@@ -13,7 +13,12 @@ from fastapi.testclient import TestClient
 from argus.core.config import get_settings
 from argus.core.db import session_scope
 from argus.core.models import Job
-from argus.investigations.models import Investigation, InvestigationLink, Report
+from argus.investigations.models import (
+    Investigation,
+    InvestigationLink,
+    InvestigationTask,
+    Report,
+)
 from argus.knowledge.models import Chunk
 from argus.main import _buckets, app
 from tests.conftest import drain_queue, ingest_html, requires_db
@@ -567,6 +572,100 @@ def test_events_limit_and_offset(client, monkeypatch):
     assert client.get(
         f"/api/investigations/{inv_id}/events", params={"offset": -1}
     ).status_code == 422
+
+
+# --- cancel investigation ---
+
+
+def _plan(queries=("q1", "q2")):
+    from argus.agentruntime.schemas import ResearchPlan
+
+    return ResearchPlan(
+        companies=["NVIDIA CORP"], doc_types=["news"],
+        queries=list(queries), rationale="canned",
+    )
+
+
+def _running_investigation_with_dag() -> uuid.UUID:
+    """Mirrors test_orchestrator.py's compile_dag setup — no LLM/live plan needed."""
+    from argus.investigations import engine, orchestrator
+
+    with session_scope() as session:
+        inv = engine.create(session, "cancel me")
+        inv.status = "running"
+        session.flush()
+        orchestrator.compile_dag(session, inv, _plan(), company_ids=[])
+        return inv.id
+
+
+def test_cancel_running_investigation_retires_tasks_and_stays_cancelled(client):
+    from argus.investigations import orchestrator
+
+    inv_id = _running_investigation_with_dag()
+
+    r = client.post(f"/api/investigations/{inv_id}/cancel")
+    assert r.status_code == 200
+    assert r.json()["status"] == "cancelled"
+
+    with session_scope() as session:
+        tasks = session.scalars(
+            sa.select(InvestigationTask).where(InvestigationTask.investigation_id == inv_id)
+        ).all()
+        assert tasks  # DAG was actually compiled
+        assert {t.status for t in tasks} == {"obsolete"}
+
+    # already-enqueued collect jobs must die harmlessly, not resurrect any task
+    orchestrator.drain(inv_id)
+
+    with session_scope() as session:
+        inv = session.get(Investigation, inv_id)
+        assert inv.status == "cancelled"
+        tasks = session.scalars(
+            sa.select(InvestigationTask).where(InvestigationTask.investigation_id == inv_id)
+        ).all()
+        assert {t.status for t in tasks} == {"obsolete"}
+
+
+def test_cancel_complete_investigation_is_409(client):
+    with session_scope() as session:
+        inv = Investigation(question="already done", status="complete")
+        session.add(inv)
+        session.flush()
+        inv_id = inv.id
+    assert client.post(f"/api/investigations/{inv_id}/cancel").status_code == 409
+
+
+def test_cancel_failed_investigation_is_409(client):
+    with session_scope() as session:
+        inv = Investigation(question="already failed", status="failed")
+        session.add(inv)
+        session.flush()
+        inv_id = inv.id
+    assert client.post(f"/api/investigations/{inv_id}/cancel").status_code == 409
+
+
+def test_cancel_unknown_investigation_is_404(client):
+    assert client.post(f"/api/investigations/{uuid.uuid4()}/cancel").status_code == 404
+
+
+def test_finalize_does_not_stomp_a_cancelled_investigation(client):
+    """Guard against a concurrent drain() finishing after a cancel already landed:
+    _finalize must leave the terminal "cancelled" status alone, never overwrite it
+    with "complete"."""
+    from argus.investigations import engine
+
+    with session_scope() as session:
+        inv = Investigation(question="cancelled mid-drain", status="cancelled")
+        session.add(inv)
+        session.flush()
+        inv_id = inv.id
+
+    with session_scope() as session:
+        result = engine._finalize(session, inv_id)
+        assert result.status == "cancelled"
+
+    with session_scope() as session:
+        assert session.get(Investigation, inv_id).status == "cancelled"
 
 
 # --- SPA serving ---

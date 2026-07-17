@@ -18,7 +18,7 @@ class Investigation(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(**_uuid_pk)
     question: Mapped[str]
-    # created | running | complete | failed | archived
+    # created | running | complete | failed | cancelled | archived
     status: Mapped[str] = mapped_column(server_default="created")
     confidence: Mapped[float | None]
     confidence_breakdown: Mapped[dict] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))

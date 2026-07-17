@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from argus.core.db import session_scope
@@ -302,6 +302,28 @@ def refresh_investigation(investigation_id: uuid.UUID) -> dict:
     engine.execute(investigation_id, "refresh")
     with session_scope() as session:
         return _investigation_json(session, session.get(Investigation, investigation_id))
+
+
+@router.post("/api/investigations/{investigation_id}/cancel")
+def cancel_investigation(investigation_id: uuid.UUID) -> dict:
+    with session_scope() as session:
+        inv = _get_or_404(session, investigation_id)
+        if inv.status not in ("created", "running"):
+            raise HTTPException(409, f"cannot cancel a {inv.status} investigation")
+        # retire undriven tasks exactly like engine.refresh(): run_task no-ops on
+        # "obsolete", so already-enqueued outbox jobs die harmlessly, and a running
+        # task's _advance won't see them as pending — no new job is ever enqueued
+        session.execute(
+            update(InvestigationTask)
+            .where(
+                InvestigationTask.investigation_id == inv.id,
+                InvestigationTask.status.in_(["pending", "running"]),
+            )
+            .values(status="obsolete")
+        )
+        inv.status = "cancelled"
+        engine._emit(session, inv.id, "investigation.cancelled", {})
+        return _investigation_json(session, inv)
 
 
 @router.post("/api/investigations/{investigation_id}/replay")

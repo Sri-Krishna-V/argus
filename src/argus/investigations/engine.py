@@ -74,6 +74,8 @@ def run(session: Session, investigation_id: uuid.UUID) -> Investigation:
 def _finalize(session: Session, investigation_id: uuid.UUID) -> Investigation:
     session.expire_all()  # drain committed in other sessions
     inv = session.get(Investigation, investigation_id)
+    if inv.status == "cancelled":
+        return inv  # cancelled while draining; leave terminal state alone
     if inv.status == "failed":
         raise RuntimeError("investigation failed during task execution")
     incomplete = session.scalar(
@@ -134,8 +136,9 @@ def execute(investigation_id: uuid.UUID, action: str = "run") -> None:
     except Exception as exc:
         with session_scope() as session:
             inv = session.get(Investigation, investigation_id)
-            inv.status = "failed"
-            _emit(session, investigation_id, "investigation.failed", {"error": str(exc)})
+            if inv.status != "cancelled":
+                inv.status = "failed"
+                _emit(session, investigation_id, "investigation.failed", {"error": str(exc)})
 
 
 def replay_retrieval(session: Session, investigation_id: uuid.UUID) -> dict:
