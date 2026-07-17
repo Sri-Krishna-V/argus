@@ -17,6 +17,7 @@ from argus.investigations.models import (
     Evidence,
     Hypothesis,
     Investigation,
+    InvestigationEvent,
     InvestigationLink,
     InvestigationTask,
     Report,
@@ -220,6 +221,30 @@ def get_tasks(investigation_id: uuid.UUID, session: Session = Depends(get_db)) -
             for t in rows
         ]
     }
+
+
+@router.get("/api/investigations/{investigation_id}/events")
+def get_events(
+    investigation_id: uuid.UUID,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    session: Session = Depends(get_db),
+) -> list[dict]:
+    _get_or_404(session, investigation_id)
+    rows = session.scalars(
+        select(InvestigationEvent)
+        .where(InvestigationEvent.investigation_id == investigation_id)
+        .order_by(InvestigationEvent.id)
+        .limit(limit)
+        .offset(offset)
+    ).all()
+    return [
+        {
+            "id": e.id, "event_type": e.event_type, "payload": e.payload,
+            "created_at": e.created_at,
+        }
+        for e in rows
+    ]
 
 
 def _report_citations(session: Session, narrative: str) -> list[dict]:

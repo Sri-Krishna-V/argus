@@ -96,6 +96,13 @@ export interface Job {
   created_at: string
 }
 
+export interface InvestigationEvent {
+  id: number
+  event_type: string
+  payload: Record<string, unknown>
+  created_at: string
+}
+
 export interface PipelineMetrics {
   queue_depth: Record<string, number>
   stages_24h: { stage: string; status: string; runs: number; avg_duration_ms: number }[]

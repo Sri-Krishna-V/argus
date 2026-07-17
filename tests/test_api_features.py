@@ -484,6 +484,91 @@ def test_tasks_endpoint_404s_on_unknown_investigation(fake_embeddings):
     assert client.get(f"/api/investigations/{_uuid.uuid4()}/tasks").status_code == 404
 
 
+@requires_db
+def test_events_endpoint_lists_audit_trail(monkeypatch, fake_embeddings, seeded_companies):
+    from fastapi.testclient import TestClient
+
+    from argus.dataplatform import worker
+    from argus.investigations import engine, orchestrator
+    from argus.main import app as fastapi_app
+    from tests.test_investigations import _fake_adapter
+
+    _fake_adapter(monkeypatch)
+    monkeypatch.setitem(worker.EXTRA_HANDLERS, orchestrator.JOB_TYPE, orchestrator.run_task)
+    ingest_html(
+        "<html><body><p>ZZZT NVIDIA CORP automotive self-driving platform revenue "
+        "grew.</p></body></html>", doc_type="news",
+    )
+    drain_queue()
+    with session_scope() as session:
+        inv_id = engine.create(session, "How is the automotive business?").id
+    engine.execute(inv_id, "run")
+
+    client = TestClient(fastapi_app)
+    r = client.get(f"/api/investigations/{inv_id}/events")
+    assert r.status_code == 200
+    events = r.json()
+    assert isinstance(events, list)
+    assert events[0]["event_type"] == "investigation.created"
+    assert events[-1]["event_type"] == "investigation.completed"
+    ids = [e["id"] for e in events]
+    assert ids == sorted(ids) and len(ids) == len(set(ids))
+    evidence_events = [e for e in events if e["event_type"] == "evidence.collected"]
+    assert evidence_events
+    assert "chunk_ids" in evidence_events[0]["payload"]
+
+
+@requires_db
+def test_events_endpoint_404s_on_unknown_investigation(fake_embeddings):
+    import uuid as _uuid
+
+    from fastapi.testclient import TestClient
+
+    from argus.main import app as fastapi_app
+
+    client = TestClient(fastapi_app)
+    assert client.get(f"/api/investigations/{_uuid.uuid4()}/events").status_code == 404
+
+
+def test_events_limit_and_offset(client, monkeypatch):
+    from tests.test_investigations import _fake_adapter
+
+    ingest_html(
+        f"<html><body><p>NVIDIA CORP events pagination seed document about "
+        f"automotive self-driving platform revenue. {FILLER}</p></body></html>",
+        published_at=datetime(2026, 6, 1, tzinfo=UTC), doc_type="news",
+    )
+    drain_queue()
+    _fake_adapter(monkeypatch)
+    created = client.post(
+        "/api/investigations", json={"question": "How is the DC business?"}
+    ).json()
+    inv_id = created["id"]
+
+    full = client.get(f"/api/investigations/{inv_id}/events").json()
+    assert len(full) >= 4
+
+    first_two = client.get(
+        f"/api/investigations/{inv_id}/events", params={"limit": 2, "offset": 0}
+    ).json()
+    next_two = client.get(
+        f"/api/investigations/{inv_id}/events", params={"limit": 2, "offset": 2}
+    ).json()
+    assert first_two == full[:2]
+    assert next_two == full[2:4]
+    assert {e["id"] for e in first_two}.isdisjoint({e["id"] for e in next_two})
+
+    assert client.get(
+        f"/api/investigations/{inv_id}/events", params={"limit": 0}
+    ).status_code == 422
+    assert client.get(
+        f"/api/investigations/{inv_id}/events", params={"limit": 201}
+    ).status_code == 422
+    assert client.get(
+        f"/api/investigations/{inv_id}/events", params={"offset": -1}
+    ).status_code == 422
+
+
 # --- SPA serving ---
 
 

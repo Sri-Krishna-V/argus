@@ -10,6 +10,7 @@ import { ConfidenceMeter } from "@/components/confidence-meter"
 import { ReportNarrative } from "@/components/report-narrative"
 import { StatusDot } from "@/components/status-dot"
 import { TaskDag } from "@/components/task-dag"
+import { ActivityTimeline } from "@/components/activity-timeline"
 import { Link } from "@tanstack/react-router"
 
 const GLASS_CARD = "border border-border bg-white/[0.03]"
@@ -46,6 +47,7 @@ function InvestigationDetailPage() {
     queryClient.invalidateQueries({ queryKey: ["investigation", investigationId] })
     queryClient.invalidateQueries({ queryKey: ["report", investigationId] })
     queryClient.invalidateQueries({ queryKey: ["evidence", investigationId] })
+    queryClient.invalidateQueries({ queryKey: ["events", investigationId] })
   }
 
   const refresh = useMutation({
@@ -143,6 +145,13 @@ function InvestigationDetailPage() {
               ))}
             </div>
           ))}
+        </CardContent>
+      </Card>
+
+      <Card className={GLASS_CARD}>
+        <CardHeader><CardTitle className={EYEBROW}>Activity</CardTitle></CardHeader>
+        <CardContent>
+          <ActivityTimeline investigationId={investigationId} status={inv.status} />
         </CardContent>
       </Card>
 
