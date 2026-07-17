@@ -3,6 +3,7 @@ ponytail: one router module; split per-resource when it outgrows a screenful."""
 
 import uuid
 from datetime import UTC, datetime, timedelta
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
@@ -12,8 +13,9 @@ from sqlalchemy.orm import Session
 
 from argus.core.db import session_scope
 from argus.core.models import Job
-from argus.investigations import engine, orchestrator
+from argus.investigations import engine, lifecycle, orchestrator
 from argus.investigations.models import (
+    Annotation,
     Evidence,
     Hypothesis,
     Investigation,
@@ -194,11 +196,70 @@ def get_evidence(
     ).all()
     return [
         {
-            "chunk_id": e.chunk_id, "document_id": e.document_id, "stance": e.stance,
-            "rationale": e.rationale, "query": e.query, "excerpt": e.excerpt,
-            "strategy": e.strategy,
+            "id": e.id, "chunk_id": e.chunk_id, "document_id": e.document_id,
+            "stance": e.stance, "rationale": e.rationale, "query": e.query,
+            "excerpt": e.excerpt, "strategy": e.strategy, "review": e.review,
         }
         for e in rows
+    ]
+
+
+class ReviewEvidence(BaseModel):
+    review: Literal["approved", "rejected"]
+
+
+@router.post("/api/investigations/{investigation_id}/evidence/{evidence_id}/review")
+def review_evidence(
+    investigation_id: uuid.UUID, evidence_id: uuid.UUID, body: ReviewEvidence
+) -> dict:
+    with session_scope() as session:
+        _get_or_404(session, investigation_id)
+        ev = session.scalar(
+            select(Evidence).where(
+                Evidence.id == evidence_id, Evidence.investigation_id == investigation_id
+            )
+        )
+        if ev is None:
+            raise HTTPException(404, "evidence not found on this investigation")
+        ev.review = body.review
+        engine._emit(session, investigation_id, "analyst.evidence_reviewed",
+                      {"evidence_id": str(evidence_id), "review": body.review})
+        return {"id": ev.id, "review": ev.review}
+
+
+class CreateAnnotation(BaseModel):
+    target: dict
+    body: str = Field(min_length=1, max_length=5000)
+
+
+@router.post("/api/investigations/{investigation_id}/annotations", status_code=201)
+def create_annotation(investigation_id: uuid.UUID, body: CreateAnnotation) -> dict:
+    with session_scope() as session:
+        _get_or_404(session, investigation_id)
+        ann = Annotation(investigation_id=investigation_id, target=body.target, body=body.body)
+        session.add(ann)
+        session.flush()
+        engine._emit(session, investigation_id, "analyst.annotated",
+                      {"annotation_id": str(ann.id), "target": ann.target})
+        return {
+            "id": ann.id, "investigation_id": investigation_id,
+            "target": ann.target, "body": ann.body, "created_at": ann.created_at,
+        }
+
+
+@router.get("/api/investigations/{investigation_id}/annotations")
+def list_annotations(
+    investigation_id: uuid.UUID, session: Session = Depends(get_db)
+) -> list[dict]:
+    _get_or_404(session, investigation_id)
+    rows = session.scalars(
+        select(Annotation)
+        .where(Annotation.investigation_id == investigation_id)
+        .order_by(Annotation.created_at, Annotation.id)
+    ).all()
+    return [
+        {"id": a.id, "target": a.target, "body": a.body, "created_at": a.created_at}
+        for a in rows
     ]
 
 
@@ -304,12 +365,18 @@ def refresh_investigation(investigation_id: uuid.UUID) -> dict:
         return _investigation_json(session, session.get(Investigation, investigation_id))
 
 
+def _transition_or_409(session: Session, inv: Investigation, new_status: str) -> None:
+    try:
+        lifecycle.transition(session, inv, new_status)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+
 @router.post("/api/investigations/{investigation_id}/cancel")
 def cancel_investigation(investigation_id: uuid.UUID) -> dict:
     with session_scope() as session:
         inv = _get_or_404(session, investigation_id)
-        if inv.status not in ("created", "running"):
-            raise HTTPException(409, f"cannot cancel a {inv.status} investigation")
+        _transition_or_409(session, inv, "cancelled")
         # retire undriven tasks exactly like engine.refresh(): run_task no-ops on
         # "obsolete", so already-enqueued outbox jobs die harmlessly, and a running
         # task's _advance won't see them as pending — no new job is ever enqueued
@@ -321,9 +388,64 @@ def cancel_investigation(investigation_id: uuid.UUID) -> dict:
             )
             .values(status="obsolete")
         )
-        inv.status = "cancelled"
-        engine._emit(session, inv.id, "investigation.cancelled", {})
         return _investigation_json(session, inv)
+
+
+@router.post("/api/investigations/{investigation_id}/pause")
+def pause_investigation(investigation_id: uuid.UUID) -> dict:
+    with session_scope() as session:
+        inv = _get_or_404(session, investigation_id)
+        _transition_or_409(session, inv, "paused")
+        return _investigation_json(session, inv)
+
+
+@router.post("/api/investigations/{investigation_id}/resume")
+def resume_investigation(investigation_id: uuid.UUID) -> dict:
+    with session_scope() as session:
+        inv = _get_or_404(session, investigation_id)
+        _transition_or_409(session, inv, "running")
+        # tasks that became ready while paused were never enqueued (_enqueue_task's
+        # paused guard) — re-derive readiness now and enqueue them
+        orchestrator.enqueue_ready_tasks(session, inv.id)
+        return _investigation_json(session, inv)
+
+
+@router.post("/api/investigations/{investigation_id}/archive")
+def archive_investigation(investigation_id: uuid.UUID) -> dict:
+    with session_scope() as session:
+        inv = _get_or_404(session, investigation_id)
+        _transition_or_409(session, inv, "archived")
+        return _investigation_json(session, inv)
+
+
+class BranchInvestigation(BaseModel):
+    question: str | None = Field(default=None, min_length=1, max_length=2000)
+
+
+@router.post("/api/investigations/{investigation_id}/branch", status_code=201)
+def branch_investigation(investigation_id: uuid.UUID, body: BranchInvestigation) -> dict:
+    """Fresh investigation seeded from a parent — no evidence/tasks copied, only the
+    question (defaulting to the parent's) and company_ids. Merge is deferred (ADR-0012)."""
+    with session_scope() as session:
+        parent = _get_or_404(session, investigation_id)
+        child = Investigation(
+            question=body.question or parent.question,
+            company_ids=parent.company_ids,
+        )
+        session.add(child)
+        session.flush()
+        session.add(
+            InvestigationLink(
+                src_investigation_id=child.id,
+                dst_investigation_id=parent.id,
+                link_type="branched_from",
+            )
+        )
+        engine._emit(session, child.id, "investigation.branched",
+                      {"parent_id": str(parent.id), "question": child.question})
+        engine._emit(session, parent.id, "investigation.branched",
+                      {"child_id": str(child.id)})
+        return _investigation_json(session, child)
 
 
 @router.post("/api/investigations/{investigation_id}/replay")

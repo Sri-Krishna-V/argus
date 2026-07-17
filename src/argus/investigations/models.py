@@ -18,7 +18,8 @@ class Investigation(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(**_uuid_pk)
     question: Mapped[str]
-    # created | running | complete | failed | cancelled | archived
+    # created | running | paused | complete | failed | cancelled | archived
+    # (see investigations/lifecycle.py:ALLOWED_TRANSITIONS for the legal graph)
     status: Mapped[str] = mapped_column(server_default="created")
     confidence: Mapped[float | None]
     confidence_breakdown: Mapped[dict] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
@@ -59,6 +60,11 @@ class Evidence(Base):
     excerpt: Mapped[str]
     scores: Mapped[dict] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
     strategy: Mapped[str]
+    # approved | rejected | NULL (unreviewed); app-level, no enum type (PRD-V2 4.7).
+    # ponytail: refresh() rebuilds evidence wholesale (DELETE + reinsert), so a
+    # rejected row's review is lost on the next refresh — acceptable for now, revisit
+    # if analysts expect reviews to survive a refresh.
+    review: Mapped[str | None]
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_now)
 
 
@@ -113,6 +119,22 @@ class InvestigationTask(Base):
     inputs: Mapped[dict] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
     outputs: Mapped[dict] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
     error: Mapped[str | None]
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_now)
+
+
+class Annotation(Base):
+    """Free-form analyst note against evidence/report/task/investigation (PRD-V2 4.7).
+    target is a loose ref, e.g. {"kind": "evidence", "id": "<uuid>"} — no FK, since
+    the kind determines which table "id" points into."""
+
+    __tablename__ = "annotations"
+
+    id: Mapped[uuid.UUID] = mapped_column(**_uuid_pk)
+    investigation_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("investigations.id"), index=True
+    )
+    target: Mapped[dict] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
+    body: Mapped[str]
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_now)
 
 

@@ -8,7 +8,7 @@ import re
 import time
 import uuid
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
@@ -53,6 +53,14 @@ def _validate_dag(deps: dict[str, list[str]]) -> None:
 
 
 def _enqueue_task(session: Session, task: InvestigationTask) -> None:
+    # Paused: never enqueue new work. A task already running keeps running (its job
+    # exists already, untouched); resume() re-derives readiness and enqueues then —
+    # nothing needs tracking for "would have been enqueued" in the meantime.
+    inv_status = session.scalar(
+        select(Investigation.status).where(Investigation.id == task.investigation_id)
+    )
+    if inv_status == "paused":
+        return
     job = events.enqueue(
         session, JOB_TYPE,
         document_id=task.investigation_id,  # aggregate id: lets execute() drain one investigation
@@ -174,7 +182,10 @@ def synthesize(session: Session, inv: Investigation, task: InvestigationTask) ->
     """V1 _draft_and_score, unchanged semantics: citation gate + deterministic
     confidence + versioned report (ADR-0005)."""
     rows = session.scalars(
-        select(Evidence).where(Evidence.investigation_id == inv.id)
+        select(Evidence).where(
+            Evidence.investigation_id == inv.id,
+            or_(Evidence.review.is_(None), Evidence.review != "rejected"),
+        )
     ).all()
     if not rows:
         raise ValueError("no evidence collected; cannot draft a report (ADR-0005)")
@@ -291,20 +302,19 @@ def _fail_if_exhausted(
         _emit(s, inv_id, "task.failed", {"task_id": str(task_id), "error": task.error})
 
 
-def _advance(session: Session, completed: InvestigationTask) -> None:
-    """Enqueue every dependent whose prerequisites are now all complete. Runs inside
-    the completing task's transaction: the status flip and the follow-on job commit
-    atomically (outbox pattern, ADR-0003)."""
-    session.flush()
-    # Lock the pending fan-in row(s) so concurrent _advance calls from sibling
-    # workers (ADR-0010: multiple worker processes, same jobs table) serialize on
-    # this row instead of racing on independent READ COMMITTED snapshots — without
-    # this, two siblings completing concurrently can each see the other as "not
-    # complete yet" and both skip enqueueing the dependent. order_by is required for
-    # a deterministic lock-acquisition order across transactions locking >1 row.
-    siblings = session.scalars(
+def _ready_pending_tasks(
+    session: Session, investigation_id: uuid.UUID
+) -> list[InvestigationTask]:
+    """Pending tasks whose prerequisites are all complete (readiness is derived,
+    never stored — migration 0006). Locks the pending fan-in row(s) so concurrent
+    callers (sibling task completions via _advance, a resume()) serialize on this
+    row instead of racing on independent READ COMMITTED snapshots — without this,
+    two siblings completing concurrently can each see the other as "not complete
+    yet" and both skip enqueueing the dependent (ADR-0010). order_by is required
+    for a deterministic lock-acquisition order across transactions locking >1 row."""
+    pending = session.scalars(
         select(InvestigationTask).where(
-            InvestigationTask.investigation_id == completed.investigation_id,
+            InvestigationTask.investigation_id == investigation_id,
             InvestigationTask.status == "pending",
         )
         .order_by(InvestigationTask.id)
@@ -314,15 +324,34 @@ def _advance(session: Session, completed: InvestigationTask) -> None:
         str(t.id): t.status
         for t in session.scalars(
             select(InvestigationTask).where(
-                InvestigationTask.investigation_id == completed.investigation_id
+                InvestigationTask.investigation_id == investigation_id
             )
         )
     }
-    for t in siblings:
-        if str(completed.id) in t.depends_on and all(
-            statuses.get(d) == "complete" for d in t.depends_on
-        ):
+    return [
+        t for t in pending if all(statuses.get(d) == "complete" for d in t.depends_on)
+    ]
+
+
+def _advance(session: Session, completed: InvestigationTask) -> None:
+    """Enqueue every dependent whose prerequisites are now all complete. Runs inside
+    the completing task's transaction: the status flip and the follow-on job commit
+    atomically (outbox pattern, ADR-0003)."""
+    session.flush()
+    for t in _ready_pending_tasks(session, completed.investigation_id):
+        if str(completed.id) in t.depends_on:
             _enqueue_task(session, t)
+
+
+def enqueue_ready_tasks(session: Session, investigation_id: uuid.UUID) -> int:
+    """Resume support (api routes): a paused investigation's newly-ready dependents
+    were never enqueued (see _enqueue_task's paused guard), so re-derive readiness
+    from scratch and enqueue every ready pending task. Reuses the same locked
+    readiness predicate as _advance — no second definition of "ready" to drift."""
+    ready = _ready_pending_tasks(session, investigation_id)
+    for t in ready:
+        _enqueue_task(session, t)
+    return len(ready)
 
 
 def drain(investigation_id: uuid.UUID) -> None:
@@ -352,6 +381,15 @@ def drain(investigation_id: uuid.UUID) -> None:
                     Investigation.id == investigation_id, Investigation.status == "failed"
                 )
             )
-        if live is None or failed is not None:
+            # Same reasoning as `failed`: a paused investigation can leave a pending
+            # dependent that will never get a job (its enqueue is suppressed while
+            # paused, see _enqueue_task) — without this check the loop would spin
+            # forever waiting for a job that's never coming.
+            paused = session.scalar(
+                select(Investigation.id).where(
+                    Investigation.id == investigation_id, Investigation.status == "paused"
+                )
+            )
+        if live is None or failed is not None or paused is not None:
             return
         time.sleep(0.1)  # a job exists but isn't claimable yet (backoff or other worker)
