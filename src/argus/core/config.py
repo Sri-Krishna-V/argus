@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     openrouter_api_key: str = ""
     llm_model: str = "google/gemini-2.5-flash"
     llm_timeout_seconds: int = 120  # per LLM call; bounded retries handled by litellm
+    llm_validation_retries: int = 2  # whole-call retries on truncated/invalid JSON output
     agent_retrieval_k: int = 8  # chunks per query fed to stance classification
 
     # SEC asks for a descriptive User-Agent with contact info on every request
@@ -47,6 +48,16 @@ class Settings(BaseSettings):
     max_fetch_bytes: int = 26_214_400  # connector downloads abort past this (25 MB)
     db_statement_timeout_ms: int = 30_000  # kills runaway queries server-side
     embed_batch_size: int = 128  # chunks per provider.embed() call
+
+    # retrieval intelligence (PRD-V2 2.1-2.5)
+    dedup_cosine_threshold: float = 0.97  # chunk embeddings at/above this are duplicates
+    min_evidence_per_query: int = 2  # fewer results than this flags a plan gap
+    rank_w_authority: float = 0.30  # source_rank weights (sum to 1.0)
+    rank_w_freshness: float = 0.25
+    rank_w_independence: float = 0.20
+    rank_w_corroboration: float = 0.25
+    rank_freshness_halflife_days: int = 180  # freshness halves every N days
+    rank_corroboration_saturation: int = 5  # corroboration score saturates at N docs
 
 
 @lru_cache

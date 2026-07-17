@@ -1,6 +1,9 @@
 """Phase 5: hybrid retrieval ranks known-relevant docs top-3; filters, graph hops,
-timelines, and citation resolution work on a seeded corpus. Requires Postgres."""
+timelines, and citation resolution work on a seeded corpus. Requires Postgres.
+Phase 3 (PRD-V2 2.1-2.5) extends this with graph/timeline retrieval strategies
+fused via RRF, and pure (no-DB) source-ranking tests."""
 
+import uuid
 from datetime import UTC, datetime
 
 import pytest
@@ -59,7 +62,7 @@ def test_hybrid_search_ranks_relevant_doc_top3():
     assert results, "no results"
     assert docs["datacenter"] in [r.document_id for r in results[:3]]
     top = results[0]
-    assert top.strategy == "hybrid-rrf/v1"
+    assert top.strategy == "hybrid-rrf/v2"
     assert "rrf" in top.scores and ("lexical_rank" in top.scores or "semantic_rank" in top.scores)
 
 
@@ -106,8 +109,6 @@ def test_timeline_orders_by_publication(seeded_companies):
 
 
 def test_citations_resolve_and_missing_chunks_raise():
-    import uuid
-
     _corpus()
     with session_scope() as session:
         results = search(session, "data center GPU revenue", k=3)
@@ -117,3 +118,116 @@ def test_citations_resolve_and_missing_chunks_raise():
 
         with pytest.raises(LookupError, match="missing chunks"):
             resolve(session, [uuid.uuid4()])
+
+
+# --- PRD-V2 2.2: graph + timeline retrieval strategies fused via RRF ---
+
+
+def test_search_noop_strategies_contribute_nothing_but_dont_break_fusion():
+    """RRF fusion with a strategy returning zero rows (graph/timeline need a company
+    filter / timeframe respectively; a bare query has neither) must still rank
+    fine on semantic+lexical alone."""
+    docs = _corpus()
+    with session_scope() as session:
+        results = search(session, "data center GPU revenue growth", k=5)
+    assert results
+    assert docs["datacenter"] in [r.document_id for r in results[:3]]
+    assert not any(
+        "graph_rank" in r.scores or "timeline_rank" in r.scores for r in results
+    )
+
+
+def test_graph_strategy_surfaces_neighbor_company_chunks(seeded_companies):
+    """NVIDIA and Apple are co-mentioned in the "filing" doc; searching seeded on
+    NVIDIA should reach Apple-only content (the "iphone" doc) via graph traversal —
+    something semantic+lexical alone, filtered to NVIDIA, cannot do."""
+    docs = _corpus()
+    nvidia = seeded_companies["NVIDIA CORP"]
+    with session_scope() as session:
+        base_only = search(
+            session, "iPhone shipments China", filters=SearchFilters(company_id=nvidia),
+            k=10, strategies=("semantic", "lexical"),
+        )
+        assert docs["iphone"] not in {r.document_id for r in base_only}
+
+        with_graph = search(
+            session, "iPhone shipments China", filters=SearchFilters(company_id=nvidia), k=10,
+        )
+        assert docs["iphone"] in {r.document_id for r in with_graph}
+        hit = next(r for r in with_graph if r.document_id == docs["iphone"])
+        assert "graph_rank" in hit.scores
+        assert "graph" in hit.contributing_strategies
+
+
+def test_graph_strategy_noop_with_no_edges():
+    """An unseeded/unknown company has no graph neighbors: the strategy contributes
+    nothing, and search doesn't crash — it just falls back to whatever (nothing,
+    here) the base filters allow."""
+    with session_scope() as session:
+        results = search(
+            session, "revenue growth", filters=SearchFilters(company_id=uuid.uuid4()), k=5
+        )
+    assert results == []
+
+
+def test_timeline_strategy_boosts_recent_chunks_in_timeframe(seeded_companies):
+    docs = _corpus()
+    apple = seeded_companies["Apple Inc."]
+    with session_scope() as session:
+        results = search(
+            session, "Apple", filters=SearchFilters(company_id=apple, timeframe="2026-05"), k=10,
+        )
+    hit = next((r for r in results if r.document_id == docs["iphone"]), None)
+    assert hit is not None
+    assert "timeline_rank" in hit.scores
+
+
+def test_timeline_strategy_noop_on_unparseable_timeframe(seeded_companies):
+    apple = seeded_companies["Apple Inc."]
+    with session_scope() as session:
+        results = search(
+            session, "Apple", filters=SearchFilters(company_id=apple, timeframe="not-a-date"),
+            k=10,
+        )
+    assert not any("timeline_rank" in r.scores for r in results)
+
+
+# --- PRD-V2 2.3: deterministic source ranking (pure, no DB) ---
+
+
+def test_score_source_components_move_score_in_expected_direction():
+    from argus.knowledge.models import Document
+    from argus.research.ranking import score_source
+
+    now = datetime(2026, 7, 17, tzinfo=UTC)
+    filing = Document(doc_type="filing", published_at=now, source="sec_edgar")
+    news = Document(doc_type="news", published_at=now, source="rss")
+    old_news = Document(
+        doc_type="news", published_at=datetime(2020, 1, 1, tzinfo=UTC), source="rss"
+    )
+
+    score_filing, explanation = score_source(filing, 0, now)
+    score_news, _ = score_source(news, 0, now)
+    score_old, _ = score_source(old_news, 0, now)
+    score_corroborated, _ = score_source(news, 5, now, corroborating_publishers=5)
+    score_echo, _ = score_source(news, 5, now, corroborating_publishers=1)
+
+    assert score_filing > score_news  # authority: filings beat news
+    assert score_news > score_old  # freshness: newer beats older
+    assert score_corroborated > score_news  # corroboration: more backing beats none
+    assert score_corroborated > score_echo  # independence: diverse beats an echo chamber
+    assert "components" in explanation and "inputs" in explanation
+    assert set(explanation["components"]) == {
+        "authority", "freshness", "independence", "corroboration",
+    }
+
+
+def test_score_source_handles_missing_publish_date_and_zero_corroboration():
+    from argus.knowledge.models import Document
+    from argus.research.ranking import score_source
+
+    now = datetime(2026, 7, 17, tzinfo=UTC)
+    undated = Document(doc_type="news", published_at=None, source="rss")
+    score, explanation = score_source(undated, 0, now)
+    assert 0.0 <= score <= 1.0
+    assert explanation["components"]["independence"]["value"] == 0.0

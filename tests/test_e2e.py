@@ -24,6 +24,20 @@ from tests.conftest import drain_queue, ingest_html, requires_db
 
 pytestmark = [requires_db, pytest.mark.usefixtures("fake_embeddings", "seeded_companies")]
 
+
+@pytest.fixture(autouse=True)
+def _no_dedup_collapse(monkeypatch):
+    """This module's `corpus` fixture deliberately shares a huge boilerplate block
+    (FILLER) across a supporting/contradicting document pair, to exercise stance
+    classification — not dedup. FakeProvider's crude bag-of-words embeddings score
+    that shared boilerplate similar enough to trip near-dup dedup (PRD-V2 2.4) and
+    collapse the pair the journey depends on; real embeddings wouldn't conflate
+    "growing" and "decelerating" this way. Dedup itself has dedicated unit tests
+    in tests/test_agentruntime.py."""
+    from argus.core.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "dedup_cosine_threshold", 1.1)
+
 FILLER = "Quarterly commentary follows. " + "filler " * 40
 
 
@@ -126,7 +140,7 @@ def test_search_finds_relevant_doc_with_scores_and_strategy(client, corpus):
     # and semantic signal and rank first, ahead of the contradicting/unrelated docs.
     top = results[0]
     assert top["document_id"] == str(corpus["supporting"])
-    assert top["scores"] and top["strategy"] == "hybrid-rrf/v1"
+    assert top["scores"] and top["strategy"] == "hybrid-rrf/v2"
 
 
 # --- 2: investigation lifecycle via API ---

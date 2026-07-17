@@ -142,8 +142,9 @@ def execute(investigation_id: uuid.UUID, action: str = "run") -> None:
 
 
 def replay_retrieval(session: Session, investigation_id: uuid.UUID) -> dict:
-    """Re-execute each collect task's retrieval from its recorded inputs; recorded
-    and replayed chunk sets must match per task (corpus unchanged, Bible §13)."""
+    """Re-execute each collect task's retrieval (+ dedup, PRD-V2 2.4 — both are
+    deterministic) from its recorded inputs; recorded and replayed chunk sets must
+    match per task (corpus unchanged, Bible §13)."""
     tasks = session.scalars(
         select(InvestigationTask).where(
             InvestigationTask.investigation_id == investigation_id,
@@ -159,6 +160,7 @@ def replay_retrieval(session: Session, investigation_id: uuid.UUID) -> dict:
         company_ids = [uuid.UUID(c) for c in p["company_ids"]] or [None]
         hits = collector.retrieve(session, p["query"], company_ids,
                                   p["doc_types"] or None, p["k"], set())
+        hits, _dropped, _corroborated = collector.dedup_evidence(session, hits)
         replayed = [str(h.chunk_id) for h in hits]
         per_task.append({
             "task_id": str(t.id), "query": p["query"],

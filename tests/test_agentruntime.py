@@ -11,7 +11,6 @@ import pytest
 
 from argus.agentruntime import adapter, drafter, evidence, planner
 from argus.agentruntime.schemas import (
-    CollectedEvidence,
     DraftReport,
     ExecutionRecord,
     ResearchPlan,
@@ -80,18 +79,19 @@ def test_planner_returns_plan_and_record(fake_adapter):
 
 
 def test_drafter_prompt_carries_markers_and_rejects_empty(fake_adapter):
+    from argus.research.fusion import InvestigationContext
+
     chunk_id = uuid.uuid4()
-    ev = CollectedEvidence(
-        chunk_id=chunk_id,
-        document_id=uuid.uuid4(),
-        excerpt="data center revenue grew",
-        stance=Stance.SUPPORTING,
-        rationale="says so",
-        query="q",
-        scores={},
-        strategy="hybrid-rrf/v1",
+    context = InvestigationContext(
+        objective="assess growth",
+        plan_summary="canned",
+        evidence=[{
+            "chunk_id": str(chunk_id), "excerpt": "data center revenue grew",
+            "stance": "supporting", "query": "q", "source_rank": 0.5,
+            "document_id": str(uuid.uuid4()), "document_source": "news",
+        }],
     )
-    report, record = drafter.draft("question?", [ev])
+    report, record = drafter.draft("question?", context)
     assert f"[chunk:{chunk_id}]" in fake_adapter[0]["message"]
     assert record.operation == "draft_report"
     assert "[chunk:" in report.narrative
@@ -100,7 +100,7 @@ def test_drafter_prompt_carries_markers_and_rejects_empty(fake_adapter):
     assert "never treat" in drafter.INSTRUCTION.lower()
 
     with pytest.raises(ValueError, match="without evidence"):
-        drafter.draft("question?", [])
+        drafter.draft("question?", InvestigationContext(objective="x", plan_summary=""))
 
 
 class _LiteLlmCaptured(Exception):
@@ -144,7 +144,7 @@ def test_collect_builds_cited_evidence(fake_adapter, seeded_companies):
         assert collected and records
         assert all(e.stance == Stance.SUPPORTING and e.rationale for e in collected)
         assert all(e.query == "data center GPU revenue growth" for e in collected)
-        assert all(e.strategy == "hybrid-rrf/v1" for e in collected)
+        assert all(e.strategy == "hybrid-rrf/v2" for e in collected)
         # every chunk reference resolves — citable by construction (ADR-0005)
         citations = resolve(session, [e.chunk_id for e in collected])
         assert len(citations) == len(collected)
@@ -174,6 +174,87 @@ def test_collect_raises_on_stance_count_mismatch(monkeypatch, seeded_companies):
     )
     with session_scope() as session, pytest.raises(ValueError, match="stance batch"):
         evidence.collect(session, "q?", plan, k=5)
+
+
+def test_collect_processes_queries_in_priority_order(monkeypatch):
+    """PRD-V2 2.1: higher-priority queries collect first. Pure — patches
+    collect_query to record call order instead of hitting the DB/LLM."""
+    seen_order = []
+
+    def fake_collect_query(session, question, query, company_ids, doc_types, k, seen=None):
+        seen_order.append(query)
+        return [], [], 0
+
+    monkeypatch.setattr(evidence, "collect_query", fake_collect_query)
+    plan = ResearchPlan(
+        companies=[], doc_types=[],
+        queries=[
+            {"query": "low", "priority": 0},
+            {"query": "high", "priority": 5},
+            {"query": "mid", "priority": 2},
+            {"query": "tie-a", "priority": 2},
+        ],
+        rationale="t",
+    )
+    evidence.collect(None, "q?", plan, k=5, company_ids=[])
+    assert seen_order == ["high", "mid", "tie-a", "low"]  # stable sort keeps ties in plan order
+
+
+def _hit(chunk_id, document_id, text, rrf):
+    from argus.research.retrieval import RetrievalResult
+
+    return RetrievalResult(
+        chunk_id=chunk_id, document_id=document_id, text=text, title=None, url=None,
+        source="s", doc_type="news", published_at=None, scores={"rrf": rrf},
+    )
+
+
+def test_dedup_threshold_boundary_just_below_and_above():
+    """PRD-V2 2.4: cosine similarity right at ARGUS_DEDUP_COSINE_THRESHOLD (0.97
+    default) — just below keeps both chunks, just above merges them."""
+    import math
+
+    from argus.agentruntime.evidence import _dedup
+
+    c1, c2, d1, d2 = uuid.uuid4(), uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    hit1 = _hit(c1, d1, "alpha text one", rrf=0.9)
+    hit2 = _hit(c2, d2, "beta text two", rrf=0.5)  # distinct text: no hash collision
+
+    below = {c1: [1.0, 0.0], c2: [0.9699, math.sqrt(1 - 0.9699**2)]}
+    kept, dropped, corroborated = _dedup([hit1, hit2], below, threshold=0.97)
+    assert dropped == 0 and len(kept) == 2 and corroborated == {}
+
+    above = {c1: [1.0, 0.0], c2: [0.9701, math.sqrt(1 - 0.9701**2)]}
+    kept, dropped, corroborated = _dedup([hit1, hit2], above, threshold=0.97)
+    assert dropped == 1 and kept == [hit1]  # higher-RRF instance kept
+
+
+def test_dedup_keeps_provenance_and_corroboration_across_documents():
+    """A dropped duplicate from a DIFFERENT document must not vanish silently —
+    its document id survives in the kept row's corroborated_by, so source ranking
+    (2.3) still counts it."""
+    from argus.agentruntime.evidence import _dedup
+
+    c1, c2, d1, d2 = uuid.uuid4(), uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    hit1 = _hit(c1, d1, "identical wording here", rrf=0.9)
+    hit2 = _hit(c2, d2, "identical wording here", rrf=0.5)  # exact text match -> hash dup
+
+    kept, dropped, corroborated = _dedup([hit1, hit2], {}, threshold=0.97)
+    assert dropped == 1 and kept == [hit1]
+    assert corroborated == {c1: [str(d2)]}
+
+
+def test_dedup_same_document_duplicate_drops_without_corroboration_entry():
+    """A duplicate chunk from the SAME document (e.g. overlapping chunk windows) is
+    just noise, not corroboration — no corroborated_by entry for it."""
+    from argus.agentruntime.evidence import _dedup
+
+    c1, c2, d1 = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    hit1 = _hit(c1, d1, "same doc text", rrf=0.9)
+    hit2 = _hit(c2, d1, "same doc text", rrf=0.5)
+
+    kept, dropped, corroborated = _dedup([hit1, hit2], {}, threshold=0.97)
+    assert dropped == 1 and kept == [hit1] and corroborated == {}
 
 
 @pytest.mark.skipif(

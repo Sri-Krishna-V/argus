@@ -144,6 +144,53 @@ def test_dag_executes_to_completed_report(monkeypatch, fake_embeddings, seeded_c
 
 
 @requires_db
+def test_synthesize_scores_sources_and_fuses_context(
+    monkeypatch, fake_embeddings, seeded_companies
+):
+    """PRD-V2 2.3/2.5: synthesize must persist source_rank onto every evidence row
+    and emit the fused investigation.context_fused event before drafting."""
+    from argus.investigations import engine, orchestrator
+    from argus.investigations.models import Evidence, InvestigationEvent
+    from tests.conftest import drain_queue, ingest_html
+    from tests.test_investigations import _fake_adapter
+
+    _fake_adapter(monkeypatch)
+    _register(monkeypatch)
+    ingest_html(
+        f"<html><body><p>ZZZT NVIDIA CORP automotive self-driving platform revenue "
+        f"grew strongly this quarter. {FILLER}</p></body></html>", doc_type="news",
+    )
+    drain_queue()
+
+    with session_scope() as session:
+        inv = engine.create(session, "How is the automotive business?")
+        inv_id = inv.id
+        plan = _plan(queries=("automotive self-driving platform revenue",))
+        orchestrator.compile_dag(session, inv, plan,
+                                 company_ids=[seeded_companies["NVIDIA CORP"]])
+
+    drain_queue()
+
+    with session_scope() as session:
+        rows = session.scalars(
+            sa.select(Evidence).where(Evidence.investigation_id == inv_id)
+        ).all()
+        assert rows
+        assert all("source_rank" in r.scores for r in rows)
+        assert all("source_rank_explanation" in r.scores for r in rows)
+
+        fused = session.scalar(
+            sa.select(InvestigationEvent).where(
+                InvestigationEvent.investigation_id == inv_id,
+                InvestigationEvent.event_type == "investigation.context_fused",
+            )
+        )
+        assert fused is not None
+        assert fused.payload["objective"]
+        assert fused.payload["evidence"]
+
+
+@requires_db
 def test_synthesize_waits_for_dependencies(monkeypatch, fake_embeddings, db_session):
     """A synthesize job delivered before its deps are complete must raise (job retries)."""
     import pytest

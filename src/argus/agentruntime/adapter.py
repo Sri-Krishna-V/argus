@@ -13,7 +13,7 @@ from google.adk.models.lite_llm import LiteLlm
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from argus.agentruntime.schemas import ExecutionRecord
 from argus.core.config import get_settings
@@ -26,8 +26,23 @@ def run_structured[T: BaseModel](
     operation: str, instruction: str, message: str, schema: type[T]
 ) -> tuple[T, ExecutionRecord]:
     """One LLM call with structured JSON output. Validation errors propagate — an
-    unparseable response must never silently become evidence."""
+    unparseable response must never silently become evidence. Providers sometimes
+    return truncated JSON on a 200 (finish_reason "error"), which LiteLlm's
+    transport retries never see — so the whole call retries on ValidationError
+    (PRD-V2 4.5 execution recovery)."""
     settings = get_settings()
+    last_error: ValidationError | None = None
+    for _ in range(settings.llm_validation_retries + 1):
+        try:
+            return _run_once(operation, instruction, message, schema, settings)
+        except ValidationError as exc:
+            last_error = exc
+    raise last_error
+
+
+def _run_once[T: BaseModel](
+    operation: str, instruction: str, message: str, schema: type[T], settings
+) -> tuple[T, ExecutionRecord]:
     model = f"openrouter/{settings.llm_model}"
     runner = Runner(
         agent=LlmAgent(

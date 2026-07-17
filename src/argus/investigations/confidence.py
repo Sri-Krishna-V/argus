@@ -6,9 +6,8 @@ from datetime import UTC, datetime
 
 from argus.investigations.models import Evidence
 from argus.knowledge.models import Document
+from argus.research.ranking import QUALITY_TIER
 
-# source quality tiers: regulatory filings beat news beats profile boilerplate
-QUALITY_TIER = {"filing": 1.0, "transcript": 0.9, "news": 0.6, "profile": 0.4}
 RECENCY_DAYS = 365
 
 WEIGHTS = {

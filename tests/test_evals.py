@@ -230,6 +230,14 @@ def test_eval_investigation_matches_hand_computed_metrics(monkeypatch):
     # Three single-chunk documents so collect() gathers exactly three evidence rows.
     # doc_type="filing" keeps these isolated from _corpus()'s NVIDIA "news" document
     # (same company_id) so the retrieved evidence set is exactly these three.
+    # They also share a huge FILLER boilerplate block on purpose (short, distinct
+    # "angle" sentences otherwise); FakeProvider's bag-of-words embeddings would
+    # otherwise score that shared boilerplate as a near-duplicate (PRD-V2 2.4) and
+    # collapse the three-way stance split this test depends on. Disable dedup here;
+    # it has its own unit tests in tests/test_agentruntime.py.
+    from argus.core.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "dedup_cosine_threshold", 1.1)
     for angle in [
         "data center revenue accelerated sharply",
         "faces mounting competitive pricing pressure",

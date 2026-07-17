@@ -13,7 +13,10 @@ Given a research question, produce a retrieval plan:
   (e.g. "NVIDIA CORP", "Apple Inc.")
 - doc_types: the subset of ["news", "filing"] worth searching
 - queries: 3-6 short keyword retrieval queries; each carries an objective explaining
-  what evidence it targets
+  what evidence it targets, and MAY set: priority (int, higher runs first; default
+  0), timeframe (free-form period, e.g. "2024Q3"; default ""), evidence_target
+  (the fact/artifact this query should establish; default ""), source_types
+  (subset of ["news", "filing"]; default [])
 - rationale: one paragraph on why these targets and queries
 Plan only. Do not answer the question."""
 

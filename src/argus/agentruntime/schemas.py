@@ -10,10 +10,22 @@ from pydantic import BaseModel, Field, field_validator
 
 class PlannedQuery(BaseModel):
     """One retrieval query with the reason it exists (PRD-V2 2.1: queries are
-    explainable). Priority/timeframe arrive with Retrieval Intelligence (Phase 3)."""
+    explainable). priority/timeframe/evidence_target/source_types are optional —
+    the LLM may omit them, and the v1 string-upgrade validator below still upgrades
+    plain strings from before Phase 3 into fully-defaulted instances."""
 
     query: str = Field(min_length=1, description="short keyword retrieval query")
     objective: str = Field(default="", description="what evidence this query targets")
+    priority: int = Field(default=0, description="higher runs first among sibling queries")
+    timeframe: str = Field(
+        default="", description='free-form period this query targets, e.g. "2024Q3"'
+    )
+    evidence_target: str = Field(
+        default="", description="what artifact/fact this query should produce"
+    )
+    source_types: list[str] = Field(
+        default_factory=list, description='subset of ["news", "filing"] to search'
+    )
 
 
 class ResearchPlan(BaseModel):

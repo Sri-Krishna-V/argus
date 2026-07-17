@@ -178,7 +178,8 @@ def test_run_produces_evidence_report_confidence_and_history(monkeypatch, corpus
         ]
         assert event_types == [
             "investigation.created", "agent.plan", "investigation.compiled",
-            "evidence.collected", "agent.draft", "investigation.completed",
+            "evidence.collected", "investigation.context_fused", "agent.draft",
+            "investigation.completed",
         ]
         # replay record carries the prompts and retrieval params (Bible §13)
         collected = session.scalar(
@@ -380,7 +381,7 @@ def test_investigation_api_lifecycle(client, monkeypatch, corpus):
     assert "queue_depth" in metrics and "stages_24h" in metrics
 
     results = client.get("/api/search", params={"q": "data center GPU"}).json()
-    assert results and results[0]["strategy"] == "hybrid-rrf/v1"
+    assert results and results[0]["strategy"] == "hybrid-rrf/v2"
 
 
 def test_pipeline_metrics_edge_cases(client):

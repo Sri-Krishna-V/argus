@@ -48,3 +48,36 @@ def neighborhood(
         {"company_id": company_id, "depth": depth, "edge_types": edge_types},
     ).all()
     return [GraphHop(*row) for row in rows]
+
+
+def neighbor_company_ids(
+    session: Session,
+    company_id: uuid.UUID,
+    depth: int = 2,
+    edge_types: list[str] | None = None,
+) -> dict[uuid.UUID, int]:
+    """Company ids reachable within `depth` hops (seed excluded), mapped to the
+    minimum depth at which each was reached. Feeds retrieval's graph strategy
+    (PRD-V2 2.2): traverse from the seed, then search neighbor companies' chunks."""
+    type_filter = "AND e.edge_type = ANY(:edge_types)" if edge_types else ""
+    rows = session.execute(
+        text(f"""
+            WITH RECURSIVE walk(node_id, depth) AS (
+                SELECT id, 0 FROM graph_nodes WHERE company_id = :company_id
+                UNION
+                SELECT CASE WHEN e.src_node_id = w.node_id
+                            THEN e.dst_node_id ELSE e.src_node_id END,
+                       w.depth + 1
+                FROM graph_edges e
+                JOIN walk w ON w.node_id IN (e.src_node_id, e.dst_node_id)
+                WHERE w.depth < :depth {type_filter}
+            )
+            SELECT n.company_id, MIN(w.depth)
+            FROM walk w
+            JOIN graph_nodes n ON n.id = w.node_id
+            WHERE w.depth > 0 AND n.company_id IS NOT NULL AND n.company_id != :company_id
+            GROUP BY n.company_id
+        """),
+        {"company_id": company_id, "depth": depth, "edge_types": edge_types},
+    ).all()
+    return dict(rows)
