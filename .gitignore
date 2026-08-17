@@ -12,4 +12,7 @@ docker-compose.override.yml
 web/node_modules
 web/dist
 graphify-out/
+.readme-preview.html
+.agents/
+.claude/skills/beautify-github-readme
 

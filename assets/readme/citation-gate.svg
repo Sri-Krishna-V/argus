@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="430" viewBox="0 0 1200 430"
+     role="img" aria-labelledby="gate-title gate-desc">
+  <title id="gate-title">The citation gate</title>
+  <desc id="gate-desc">A drafted report passes through a citation gate that checks every cited chunk against the evidence set actually retrieved for that run. A draft citing a chunk outside the retrieved set fails the run and never reaches an analyst; a draft whose citations all resolve is scored by the deterministic confidence function and persisted as a versioned report.</desc>
+
+  <rect width="1200" height="430" rx="26" fill="#06080D"/>
+  <rect x="0.75" y="0.75" width="1198.5" height="428.5" rx="25.25" fill="none" stroke="#8DA0BA" stroke-opacity="0.14" stroke-width="1.5"/>
+
+  <text x="56" y="58" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="17"
+        letter-spacing="2.4" fill="#8DA0BA">THE CITATION GATE — WHERE HALLUCINATED SOURCES DIE</text>
+
+  <!-- draft -->
+  <g transform="translate(56 92)">
+    <rect width="300" height="150" rx="16" fill="#0C1017" stroke="#8DA0BA" stroke-opacity="0.16"/>
+    <text x="22" y="36" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="16"
+          letter-spacing="1.6" fill="#8DA0BA">LLM DRAFT</text>
+    <g font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="21" fill="#EEF2F8">
+      <text x="22" y="74">Report text</text>
+      <text x="22" y="104">+ cited chunk IDs</text>
+    </g>
+    <text x="22" y="132" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="17" fill="#3A4657">agentruntime/</text>
+  </g>
+
+  <path d="M356 167 H 424" stroke="#8DA0BA" stroke-opacity="0.45" stroke-width="1.5"/>
+  <path d="M418 161 l 8 6 l -8 6 z" fill="#8DA0BA"/>
+
+  <!-- gate -->
+  <g transform="translate(432 92)">
+    <rect width="286" height="150" rx="16" fill="#0C1017" stroke="#5AA9FF" stroke-opacity="0.45"/>
+    <text x="22" y="36" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="16"
+          letter-spacing="1.6" fill="#5AA9FF">GATE</text>
+    <g font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="20" fill="#EEF2F8">
+      <text x="22" y="74">Is every cited chunk</text>
+      <text x="22" y="102">inside the evidence</text>
+      <text x="22" y="130">set we retrieved?</text>
+    </g>
+  </g>
+
+  <!-- reject -->
+  <path d="M718 140 H 780 V 108" stroke="#C97B6E" stroke-opacity="0.7" stroke-width="1.5" fill="none"/>
+  <path d="M774 114 l 6 -8 l 6 8 z" fill="#C97B6E"/>
+  <text x="726" y="132" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="17" fill="#C97B6E">no</text>
+  <g transform="translate(760 24)">
+    <rect width="384" height="82" rx="16" fill="#0C1017" stroke="#C97B6E" stroke-opacity="0.40"/>
+    <text x="22" y="36" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="22" font-weight="600" fill="#C97B6E">Run fails. Nothing ships.</text>
+    <text x="22" y="64" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="19" fill="#8DA0BA">An invented citation is a bug.</text>
+  </g>
+
+  <!-- accept -->
+  <path d="M718 194 H 780 V 232" stroke="#5AA9FF" stroke-opacity="0.7" stroke-width="1.5" fill="none"/>
+  <path d="M774 226 l 6 8 l 6 -8 z" fill="#5AA9FF"/>
+  <text x="726" y="186" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="17" fill="#5AA9FF">yes</text>
+  <g transform="translate(760 236)">
+    <rect width="384" height="128" rx="16" fill="#0C1017" stroke="#8DA0BA" stroke-opacity="0.16"/>
+    <text x="22" y="36" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="22" font-weight="600" fill="#EEF2F8">Score confidence, persist report</text>
+    <text x="22" y="66" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="20" fill="#8DA0BA">Deterministic function of the evidence:</text>
+    <text x="22" y="96" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="18" fill="#5AA9FF">diversity·.25 docs·.15 quality·.20</text>
+    <text x="22" y="118" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="18" fill="#5AA9FF">recency·.15 stance·.25</text>
+  </g>
+
+  <g font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="20" fill="#8DA0BA">
+    <text x="56" y="296">Retrieval, ranking, citation resolution</text>
+    <text x="56" y="324">and scoring are deterministic code.</text>
+    <text x="56" y="352">The model plans and writes — it never</text>
+    <text x="56" y="380">decides what is true.</text>
+  </g>
+</svg>

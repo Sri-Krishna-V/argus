@@ -1,318 +1,154 @@
-# Argus — Enterprise Research Operating System
+<p align="center">
+  <img src="./assets/readme/hero.svg" width="100%"
+       alt="Argus — ask a research question, get a report where every sentence resolves to a real document chunk, or no report at all.">
+</p>
 
-![Python](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)
-![PostgreSQL](https://img.shields.io/badge/postgres-16%20%2B%20pgvector-336791?logo=postgresql&logoColor=white)
-![FastAPI](https://img.shields.io/badge/FastAPI-modular%20monolith-009688?logo=fastapi&logoColor=white)
-![Docker](https://img.shields.io/badge/docker-compose-2496ED?logo=docker&logoColor=white)
+<p align="center">
+  <img alt="Python 3.12+" src="https://img.shields.io/badge/python-3.12%2B-06080D?labelColor=06080D&color=5AA9FF&logo=python&logoColor=5AA9FF">
+  <img alt="Postgres 16 + pgvector" src="https://img.shields.io/badge/postgres-16%20%2B%20pgvector-06080D?labelColor=06080D&color=8DA0BA&logo=postgresql&logoColor=8DA0BA">
+  <img alt="FastAPI modular monolith" src="https://img.shields.io/badge/FastAPI-modular%20monolith-06080D?labelColor=06080D&color=8DA0BA&logo=fastapi&logoColor=8DA0BA">
+  <img alt="210 tests" src="https://img.shields.io/badge/tests-210-06080D?labelColor=06080D&color=5AA9FF">
+  <img alt="13 ADRs" src="https://img.shields.io/badge/ADRs-13-06080D?labelColor=06080D&color=8DA0BA">
+</p>
 
-Argus continuously ingests financial knowledge from public sources, structures it into a
-canonical, graph-linked knowledge platform, and assists institutional research through
-evidence-based investigations — persistent, reproducible research artifacts with complete
-provenance, never chat sessions.
+Argus ingests SEC filings and news, turns them into an immutable, graph-linked knowledge base,
+and runs **investigations** on top of it — persistent, replayable research artifacts with a
+citation behind every claim and a confidence score you can recompute by hand.
 
-Argus is **not** a chatbot, a PDF-RAG demo, a trading system, or an investment advisor. It is
-knowledge infrastructure that AI consumes; generated text is never a source of truth. Every
-claim in every report resolves back to a chunk of a real, ingested document — evidence without
-a citation is rejected before it ever reaches a report, and confidence in that report is a
-computed number, not something the model says about itself.
+It is not a chatbot with a vector store bolted on. The model plans and writes. It never decides
+what is true.
 
-## Why this project exists
+## The question that breaks every AI research demo
 
-Enterprise AI is a systems engineering problem, not an LLM problem. Anyone can wire a chatbot
-to a vector store; the hard part — the part that actually determines whether a research
-platform survives contact with a real institution — is everything underneath it: deterministic
-ingestion pipelines that don't lose data, entity resolution against canonical IDs, hybrid
-retrieval that doesn't hallucinate relevance, a knowledge graph where every edge carries
-provenance, and an AI boundary narrow enough that a compliance team could actually audit it.
+Ask any of them: *where exactly did this sentence come from?*
 
-Argus is a from-scratch implementation of that architecture: the ingestion pipeline, the
-knowledge platform, the retrieval engine, the citation-gated agent runtime, and the operational
-discipline (idempotency, immutability, observability, replayable events, security hardening)
-that separates production infrastructure from a weekend demo.
+You get a plausible paragraph, a footnote that points at a whole 300-page PDF, and a
+"confidence: high" the model wrote about itself. In a bank, a fund, or a due-diligence team,
+that answer is worse than no answer — a claim you cannot trace is a claim you cannot use, and
+nobody finds out which sentence was invented until it is in a memo.
 
-## By the numbers
+Argus makes that failure mode structurally impossible instead of statistically unlikely.
 
-| | |
+<p align="center">
+  <img src="./assets/readme/citation-gate.svg" width="100%"
+       alt="The citation gate: a draft citing any chunk outside its own retrieved evidence set fails the run; a draft that passes is scored by a deterministic confidence function and persisted.">
+</p>
+
+Three rules do the work:
+
+1. **Evidence without a chunk reference is rejected at the boundary.** A drafted report that
+   cites anything outside its own retrieved evidence set fails the run.
+2. **Confidence is computed, never generated** — a weighted function of source diversity,
+   document count, source quality, recency and stance agreement, with every component in the
+   response ([`confidence.py`](src/argus/investigations/confidence.py)).
+3. **Every investigation stores its retrieval parameters, model version and chunk IDs.** Replay
+   one from six months ago and you get the same evidence back.
+
+## The questions it's actually built to answer
+
+| You ask | Argus answers with |
 |---|---|
-| Enforced architectural layers (`import-linter`) | 10 |
-| Deterministic ingestion pipeline stages | 7 |
-| Test functions | 118, across 14 files |
-| Architecture Decision Records | 9 |
-| Hand-written schema migrations | 5 |
-| Source under `src/argus/` | ~3,300 lines |
-| Storage engines unified into one Postgres instance | 6 — relational, vector (pgvector/HNSW), full-text, graph (recursive CTEs), event log, job queue |
-
-## Architecture
-
-One modular monolith, one Postgres instance, one narrow AI boundary. Import direction is a
-straight line — enforced by `import-linter` (`make lint`), not by convention — and every box
-below maps to a real package under `src/argus/`.
-
-```mermaid
-flowchart TB
-    subgraph EXT["External world"]
-        sec[["SEC EDGAR"]]
-        rss[["News / RSS sources"]]
-        llm[["OpenRouter\n(model access)"]]
-    end
-
-    subgraph L1["Presentation — ui/"]
-        ui["HTMX + Jinja2 workspace,\ndashboards, report viewer"]
-    end
-
-    subgraph L2["API — api/"]
-        api["FastAPI JSON routes\n+ security middleware"]
-    end
-
-    subgraph LE["Evaluation — evals/"]
-        evalset["golden.json scoring:\nretrieval + investigation quality"]
-    end
-
-    subgraph L3["Research Platform — investigations/"]
-        iengine["Investigation engine\n(create / run / refresh)"]
-        confidence["Deterministic confidence\nscoring"]
-        reportstore["Versioned reports\n+ replay log"]
-    end
-
-    subgraph L4["Agent Runtime — agentruntime/ (the ONLY layer with AI)"]
-        planner["Planner"]
-        evidencecollect["Evidence collector\n+ stance classifier"]
-        drafter["Drafter\n(citation-required)"]
-    end
-
-    subgraph L5["Research Engine — research/ (deterministic)"]
-        retrieval["Hybrid retrieval\n(FTS + pgvector, RRF)"]
-        citations["Citation resolver"]
-        timeline["Timelines / graph traversal"]
-    end
-
-    subgraph L6["Data Platform — dataplatform/ (deterministic)"]
-        connectors["Connectors\nsec / rss / profiles"]
-        pipeline["7-stage pipeline\nparse → … → validate"]
-        embeddings["Embeddings\n(fastembed)"]
-    end
-
-    subgraph L7["Knowledge Platform — knowledge/ (deterministic)"]
-        entities["Canonical entities\n+ resolution"]
-        kgraph["Knowledge graph\n(provenance-enforced)"]
-    end
-
-    subgraph L8["Observability — observability/"]
-        pipelineruns["Pipeline run tracking\n+ dead-letter visibility"]
-    end
-
-    subgraph L9["Infrastructure — core/"]
-        events[("Append-only\nevents")]
-        jobs[("Outbox\njobs")]
-        db[("Postgres 16\n+ pgvector")]
-    end
-
-    sec --> connectors
-    rss --> connectors
-    ui --> api --> iengine
-    iengine --> planner --> llm
-    evidencecollect --> llm
-    drafter --> llm
-    iengine --> evidencecollect --> retrieval
-    evidencecollect --> drafter --> confidence --> reportstore
-    retrieval --> citations
-    retrieval --> entities
-    connectors --> pipeline --> embeddings
-    pipeline --> entities
-    pipeline --> kgraph
-    pipeline --> events
-    iengine --> events
-    events --> jobs --> pipeline
-    pipelineruns -.->|watches| pipeline
-    evalset -.->|scores| retrieval
-    evalset -.->|scores| reportstore
-    entities --> db
-    kgraph --> db
-    events --> db
-    jobs --> db
-
-    classDef apiui fill:#e0e7ff,stroke:#4338ca,color:#312e81;
-    classDef investigations fill:#ccfbf1,stroke:#0f766e,color:#134e4a;
-    classDef agentruntime fill:#ffedd5,stroke:#c2410c,color:#7c2d12;
-    classDef research fill:#ede9fe,stroke:#6d28d9,color:#4c1d95;
-    classDef dataplatform fill:#dbeafe,stroke:#1d4ed8,color:#1e3a8a;
-    classDef knowledge fill:#dcfce7,stroke:#15803d,color:#14532d;
-    classDef observability fill:#cffafe,stroke:#0e7490,color:#164e63;
-    classDef core fill:#e2e8f0,stroke:#475569,color:#1e293b;
-    classDef ext fill:#f1f5f9,stroke:#64748b,color:#0f172a;
-
-    class ui,api apiui
-    class evalset apiui
-    class iengine,confidence,reportstore investigations
-    class planner,evidencecollect,drafter agentruntime
-    class retrieval,citations,timeline research
-    class connectors,pipeline,embeddings dataplatform
-    class entities,kgraph knowledge
-    class pipelineruns observability
-    class events,jobs,db core
-    class sec,rss,llm ext
-```
+| *"Is this margin story guidance-driven or demand-driven?"* | Evidence from multiple sources, each with a stance (supporting / contradicting) and a resolvable chunk |
+| *"What changed between the last two filings?"* | A timeline built from immutable documents — corrections arrive as new documents, never edits |
+| *"Who disagrees with this claim?"* | Contradicting evidence surfaced explicitly, and a confidence score that drops when sources disagree |
+| *"Why should I believe this number?"* | Claim → chunk → document → source, one click each, all the way down to the raw bytes on disk |
+| *"Did anything break while I wasn't looking?"* | A dead-letter queue, per-stage attempt history, and a job that failed loudly instead of disappearing |
 
 ## How it works
 
-**Ingesting a document** — every source, every document, one deterministic path:
+**Ingestion.** One path for every source. Fetch, hash, store the raw bytes, insert an immutable
+`documents` row, append an event. The event enqueues a job; the job runs seven idempotent stages.
 
-```mermaid
-flowchart LR
-    conn["Connector\nsec / rss / profiles"]:::dataplatform
-    ingest["Dedupe, write raw bytes\ncontent-addressed, insert\nimmutable documents row"]:::dataplatform
-    evt[("event appended")]:::core
-    job[("job enqueued\noutbox pattern")]:::core
+<p align="center">
+  <img src="./assets/readme/pipeline.svg" width="100%"
+       alt="Ingestion: sec_edgar, rss and company_profiles connectors write hashed raw bytes and an immutable document row, which appends an event, which enqueues a job, which runs seven idempotent stages: parse, metadata, entities, chunk, embed, graph, validate.">
+</p>
 
-    subgraph stages ["7 idempotent stages, keyed on (document_id, stage, pipeline_version)"]
-        direction LR
-        s1["parse"]:::dataplatform --> s2["extract\nmetadata"]:::dataplatform --> s3["extract\nentities"]:::dataplatform --> s4["chunk"]:::dataplatform --> s5["embed"]:::dataplatform --> s6["build\ngraph"]:::dataplatform --> s7["validate"]:::dataplatform
-    end
+**Investigation.** A question becomes a task DAG. The orchestrator walks it, each task retrieves
+its own evidence through deterministic hybrid search (Postgres full-text + pgvector, fused with
+reciprocal rank fusion), and the drafter writes only from what was retrieved. The whole run is a
+state machine — `created → running → complete`, with `paused`, `cancelled` and `archived` as
+first-class states, so a human can interrupt, annotate and resume a live investigation.
 
-    conn --> ingest --> evt --> job --> stages
-    stages -.->|"each stage emits an event\n+ enqueues the next job"| evt
+**The layer contract.** The reason any of this survives a year of changes: imports only ever
+point down, and only one layer is allowed near a model.
 
-    classDef dataplatform fill:#dbeafe,stroke:#1d4ed8,color:#1e3a8a;
-    classDef core fill:#e2e8f0,stroke:#475569,color:#1e293b;
-```
+<p align="center">
+  <img src="./assets/readme/stack.svg" width="100%"
+       alt="Nine layers in strict import order — api, evals, investigations, agentruntime, research, dataplatform, knowledge, observability, core — with agentruntime marked as the only layer permitted to import AI code.">
+</p>
 
-Crashed or stuck jobs are re-queued by a lease-based reaper; jobs that exhaust their retry
-budget dead-letter visibly instead of vanishing. Full detail in
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#5-event-driven-ingestion).
+`make lint` fails the build if a single import crosses a layer the wrong way. Not a convention,
+not a code-review habit — a contract in CI ([ADR-0001](docs/adr/0001-modular-monolith.md)).
 
-**Answering a research question** — every claim traces back to evidence, or the run fails:
+## Run it
 
-```mermaid
-flowchart LR
-    q(["Question"]):::investigations
-    plan["Plan the research\n(LLM)"]:::agentruntime
-    retrieve["Retrieve evidence\n(hybrid search)"]:::research
-    draft["Draft report\nwith citations (LLM)"]:::agentruntime
-    gate{"Citation gate"}:::investigations
-    reject["Rejected —\nno invented citations"]:::investigations
-    score["Score confidence\n(deterministic)"]:::knowledge
-    report[("Report")]:::investigations
-
-    q --> plan --> retrieve --> draft --> gate
-    gate -->|no| reject
-    gate -->|yes| score --> report
-
-    classDef investigations fill:#ccfbf1,stroke:#0f766e,color:#134e4a;
-    classDef agentruntime fill:#ffedd5,stroke:#c2410c,color:#7c2d12;
-    classDef research fill:#ede9fe,stroke:#6d28d9,color:#4c1d95;
-    classDef knowledge fill:#dcfce7,stroke:#15803d,color:#14532d;
-```
-
-Full detail, including the resolvable citation chain and the confidence formula, in
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#3-the-ai-boundary).
-
-## Engineering highlights
-
-- **Documents are immutable.** Content columns are guarded by a database trigger; corrections
-  arrive as new documents, never edits. Nothing downstream can silently rewrite history.
-- **Events are append-only; jobs are a disposable outbox.** The `events` table is the one
-  source of truth; `jobs` is derived from it and can be rebuilt from scratch at any time.
-- **Every pipeline stage is idempotent and replayable.** Keyed on
-  `(document_id, stage, pipeline_version)` — safe to re-run after a crash, and reprocessing
-  never mutates a previous version.
-- **AI never touches raw storage.** Confined to a single package (`agentruntime/`), enforced
-  by `import-linter`, not by convention or code review discipline.
-- **Uncited evidence is structurally rejected.** A drafted report that cites a chunk outside
-  its own retrieved evidence set fails the run — no invented citations reach an analyst.
-- **Confidence is computed, never generated.** A deterministic function of source diversity,
-  document count, source quality, recency, and stance agreement — auditable, reproducible,
-  and never something the model asserts about itself.
-- **Hybrid retrieval, not vector-only.** Full-text and pgvector search fused with reciprocal
-  rank fusion, under a versioned strategy so old and new scores are never silently conflated.
-- **Full reproducibility.** Every investigation persists its retrieval parameters, model
-  versions, and retrieved chunk IDs — replay an old investigation and get the same evidence.
-- **Hardened by default.** Constant-time API-key comparison, per-IP rate limiting on the
-  endpoint that spends LLM tokens, SSRF allowlisting on external fetches, capped request
-  bodies, and a full set of security headers — see ADR-0009.
-- **Observable failure, not silent failure.** Every stage attempt is recorded; poison jobs
-  dead-letter visibly on a live dashboard instead of retrying forever or disappearing.
-
-## Tech stack
-
-| Technology | Role | Why this, not the obvious alternative |
-|---|---|---|
-| PostgreSQL 16 + pgvector | Relational, vector, full-text, graph (CTEs), event log, job queue — one database | [ADR-0002](docs/adr/0002-postgres-for-everything.md): one operationally simple store beats a five-system stack at this scale |
-| FastAPI + sync SQLAlchemy 2.0 | HTTP API + ORM | [ADR-0004](docs/adr/0004-sync-first.md): sync-first — async adds complexity this I/O volume doesn't justify |
-| Google ADK + LiteLLM via OpenRouter | Agent orchestration + model access | [ADR-0006](docs/adr/0006-openrouter-model-access.md): the model is an `ARGUS_LLM_MODEL` config value, never a code dependency |
-| Events + outbox (no broker) | Ingestion backbone | [ADR-0003](docs/adr/0003-events-and-outbox.md): append-only log + `SKIP LOCKED` outbox instead of Kafka/Redis Streams |
-| HTMX + Jinja2 | Server-rendered workspace UI | Enterprise software, not a chat widget; no SPA build step |
-| Typer + rich | CLI (`argus status`, `search`, `worker`, `ingest`, `reprocess`, `retry-dead`, `eval`) | The operational surface for running and repairing the pipeline, with colorized human-facing output |
-| Docker + docker-compose | Containerized stack (`make stack`) | Postgres + API + worker, one profile, reproducible environment |
-| `import-linter` | Layer-boundary enforcement | [ADR-0001](docs/adr/0001-modular-monolith.md): a modular monolith with import direction enforced in tooling, not code review |
-
-Every deferred piece of infrastructure (Neo4j, Kafka, a dedicated vector DB, multi-user auth,
-…) is a documented decision with a concrete trigger to revisit it —
-[ADR-0008](docs/adr/0008-deferred-capabilities.md).
-
-## Documentation
-
-**New to the codebase? Start with [docs/ONBOARDING.md](docs/ONBOARDING.md)** — a guided
-walkthrough written for a developer joining the project for the first time. Everything below
-is where to go deeper once you're past the basics.
-
-| Document | Purpose |
-|---|---|
-| [docs/ONBOARDING.md](docs/ONBOARDING.md) | Start here: setup, guided tour, glossary, "where do I change X?" |
-| [docs/DESIGN_BIBLE.md](docs/DESIGN_BIBLE.md) | Governing principles; every ADR references it |
-| [docs/PRD.md](docs/PRD.md) | Product requirements, users, MVP scope |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | The layers, storage design, AI boundary — with diagrams |
-| [docs/DOMAIN_MODEL.md](docs/DOMAIN_MODEL.md) | Object catalog + entity-relationship diagram |
-| [docs/RISKS.md](docs/RISKS.md) | PRD risks mapped to design mitigations |
-| [docs/adr/](docs/adr/) | Architecture Decision Records with tradeoffs and upgrade paths |
-
-## Quickstart
-
-Requires: Python 3.12+, [uv](https://docs.astral.sh/uv/), Docker.
+Requires Python 3.12+, [uv](https://docs.astral.sh/uv/), and Docker.
 
 ```bash
 cp .env.example .env
-make up        # Postgres 16 + pgvector via docker compose
-make migrate   # apply database migrations
-make test      # run the test suite
-make lint      # ruff + layered-architecture contract
-make worker    # run the pipeline worker + connector scheduler
-make api       # run the API + UI (uvicorn --reload)
-make stack     # build and run the full app (postgres + api + worker) in containers
-make eval      # score retrieval and investigation quality against the golden set
-make backup    # pg_dump + raw-store tarball into backups/
-make restore   # restore from a backup: make restore DB_DUMP=... RAW_TGZ=...
+make up        # Postgres 16 + pgvector
+make migrate   # apply migrations
+make api       # API + dashboard at :8000
+make worker    # pipeline worker + connector scheduler (second terminal)
 ```
 
-## CLI usage
-
-`argus --help` lists every command with rich-rendered help. The operational surface:
+Then drive it from the terminal:
 
 ```bash
-argus status              # one-screen ops snapshot: job queue, dead jobs, documents, recent pipeline runs
-argus search "query" -k 5 # hybrid search from the terminal, results as a table
-argus ingest company_profiles   # run one connector pass now
-argus reprocess --stage parse --pipeline-version 2   # re-derive artifacts, no re-downloading
-argus retry-dead           # requeue dead-lettered jobs
-argus eval retrieval       # score retrieval against evals/golden.json
-argus eval investigation   # score investigation quality
-argus worker               # run the pipeline worker + connector scheduler (plain JSON logs, for machines)
+argus status                                   # job queue, dead jobs, documents, recent runs
+argus search "supply chain exposure" -k 5      # hybrid search, as a table
+argus ingest sec_edgar                         # run one connector pass now
+argus reprocess --stage chunk --pipeline-version 2   # re-derive, no re-downloading
+argus retry-dead                               # requeue poison jobs after you've fixed the cause
+argus eval retrieval                           # score against evals/golden.json
 ```
 
-Every command above renders colorized, human-facing output (`rich` tables and themed
-text); `worker` is the one exception — it keeps plain structured JSON logging, since it's
-meant to be read by log aggregators, not a terminal.
+`make test` (210 tests), `make lint` (ruff + the layer contract), `make stack` (Postgres + API +
+worker in containers), `make backup` / `make restore`. Every push runs the suite against a real
+pgvector service in GitHub Actions.
 
-## Status
+## Why it's built this way
 
-V1 is feature-complete: all ten roadmap phases (Design Bible §22) are implemented and tested —
-ingestion pipeline, knowledge graph, hybrid retrieval, agent runtime, citation-gated
-investigations, UI, containerized stack, and the eval framework. One item remains explicitly
-pending: live end-to-end verification against a real LLM, which awaits
-`ARGUS_OPENROUTER_API_KEY`. Everything else is verified against a deterministic fake adapter.
+Boring infrastructure, chosen on purpose, each with a written trade-off and a named trigger to
+revisit it.
 
-## Deliberately out of scope for V1
+| Choice | Instead of | Reasoning |
+|---|---|---|
+| One Postgres 16 + pgvector — relational, vector, full-text, graph CTEs, event log, job queue | A five-system stack with a dedicated vector DB and Neo4j | [ADR-0002](docs/adr/0002-postgres-for-everything.md) — one store you can back up, restore and reason about beats six you can't |
+| Append-only events + a `SKIP LOCKED` outbox | Kafka, Redis Streams, Celery | [ADR-0003](docs/adr/0003-events-and-outbox.md) — the log is the source of truth; the queue is derived and disposable |
+| Sync SQLAlchemy, sync httpx, `def` endpoints | async everywhere | [ADR-0004](docs/adr/0004-sync-first.md) — this I/O volume does not pay for the complexity |
+| The model behind one adapter module, selected by config | An LLM SDK imported across the codebase | [ADR-0006](docs/adr/0006-openrouter-model-access.md) — models are a config value with a six-month shelf life |
+| Evidence-first AI boundary | Prompting the model to "cite your sources" | [ADR-0005](docs/adr/0005-evidence-first-ai-boundary.md) — enforcement beats instruction |
+| React SPA on a FastAPI backend | Server-rendered templates | [ADR-0013](docs/adr/0013-react-spa-dashboard.md) — the DAG view and live timeline needed real client state |
 
-Collaboration, permissions, proprietary connectors, real-time streaming, portfolio
-optimization, multi-user organizations. Each deferred piece of infrastructure (Neo4j, Kafka,
-dedicated vector DBs) is a documented decision with a named upgrade trigger, not an oversight —
-see the ADRs.
+Thirteen ADRs, seven hand-written migrations, ~4,500 lines under `src/argus/`. Everything
+deliberately *not* built — multi-user orgs, streaming, portfolio optimization, proprietary
+connectors — is a written decision with an upgrade trigger, not an oversight
+([ADR-0008](docs/adr/0008-deferred-capabilities.md), [ADR-0012](docs/adr/0012-v2-deferrals.md)).
+
+## Where it stands
+
+V1 is complete and hardened: ingestion, knowledge graph, hybrid retrieval, agent runtime,
+citation-gated investigations, dashboard, containerized stack, eval harness, plus constant-time
+API-key checks, per-IP rate limiting on the endpoint that spends tokens, SSRF allowlisting and
+capped request bodies ([ADR-0009](docs/adr/0009-security-model-v1.md)).
+
+V2 is landing in phases — task DAG and orchestrator, the lifecycle state machine with human
+annotations, and retrieval intelligence are merged ([PRD-V2](docs/PRD-V2.md)). Every AI path is
+tested against a deterministic fake adapter; a live smoke test runs against a real model when
+`ARGUS_OPENROUTER_API_KEY` is present.
+
+## Docs
+
+New here? [**docs/ONBOARDING.md**](docs/ONBOARDING.md) is a guided tour written for someone
+joining the project on day one.
+
+| Document | What's inside |
+|---|---|
+| [DESIGN_BIBLE.md](docs/DESIGN_BIBLE.md) | The principles every ADR answers to |
+| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Layers, storage, the AI boundary, event flow |
+| [DOMAIN_MODEL.md](docs/DOMAIN_MODEL.md) | Object catalog and ER diagram |
+| [PRD.md](docs/PRD.md) · [PRD-V2.md](docs/PRD-V2.md) | Scope, users, what V2 adds |
+| [adr/](docs/adr/) | 13 decisions, with the trade-off and the trigger to revisit |
+| [RISKS.md](docs/RISKS.md) | PRD risks mapped to design mitigations |

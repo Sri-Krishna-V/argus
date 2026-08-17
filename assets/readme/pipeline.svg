@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="330" viewBox="0 0 1200 330"
+     role="img" aria-labelledby="pipe-title pipe-desc">
+  <title id="pipe-title">Ingestion pipeline</title>
+  <desc id="pipe-desc">SEC EDGAR, RSS and company profile connectors write content-addressed raw bytes and an immutable documents row. Each write appends an event, the event enqueues a job, and seven idempotent stages run in order: parse, metadata, entities, chunk, embed, graph, validate. Every stage is keyed on document id, stage and pipeline version, so a crash re-runs safely and poison jobs dead-letter visibly.</desc>
+
+  <rect width="1200" height="330" rx="26" fill="#06080D"/>
+  <rect x="0.75" y="0.75" width="1198.5" height="328.5" rx="25.25" fill="none" stroke="#8DA0BA" stroke-opacity="0.14" stroke-width="1.5"/>
+
+  <text x="56" y="56" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="17"
+        letter-spacing="2.4" fill="#8DA0BA">INGESTION — ONE DETERMINISTIC PATH, NO EXCEPTIONS</text>
+
+  <!-- sources -->
+  <g transform="translate(56 86)">
+    <rect width="212" height="112" rx="16" fill="#0C1017" stroke="#8DA0BA" stroke-opacity="0.16"/>
+    <g font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="19" fill="#EEF2F8">
+      <text x="20" y="38">sec_edgar</text>
+      <text x="20" y="68">rss</text>
+      <text x="20" y="98">company_profiles</text>
+    </g>
+  </g>
+
+  <path d="M268 142 H 322" stroke="#8DA0BA" stroke-opacity="0.45" stroke-width="1.5"/>
+  <path d="M316 136 l 8 6 l -8 6 z" fill="#8DA0BA"/>
+
+  <!-- raw store + event + job -->
+  <g transform="translate(330 86)">
+    <rect width="272" height="112" rx="16" fill="#0C1017" stroke="#8DA0BA" stroke-opacity="0.16"/>
+    <text x="20" y="36" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="21" fill="#EEF2F8">Raw bytes, hashed</text>
+    <text x="20" y="64" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="21" fill="#EEF2F8">Immutable document</text>
+    <text x="20" y="94" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="18" fill="#5AA9FF">event → job (outbox)</text>
+  </g>
+
+  <path d="M602 142 H 640" stroke="#8DA0BA" stroke-opacity="0.45" stroke-width="1.5"/>
+  <path d="M634 136 l 8 6 l -8 6 z" fill="#8DA0BA"/>
+
+  <!-- stages -->
+  <g transform="translate(648 74)">
+    <rect width="496" height="136" rx="16" fill="#0C1017" stroke="#5AA9FF" stroke-opacity="0.28"/>
+    <text x="20" y="34" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="16"
+          letter-spacing="1.6" fill="#5AA9FF">7 IDEMPOTENT STAGES</text>
+    <g font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="19" fill="#EEF2F8">
+      <text x="20" y="72">parse <tspan fill="#3A4657">→</tspan> metadata <tspan fill="#3A4657">→</tspan> entities</text>
+      <text x="20" y="102">chunk <tspan fill="#3A4657">→</tspan> embed <tspan fill="#3A4657">→</tspan> graph <tspan fill="#3A4657">→</tspan> validate</text>
+    </g>
+  </g>
+
+  <text x="56" y="252" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="20" fill="#8DA0BA">
+    Keyed on <tspan font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="18" fill="#EEF2F8">(document_id, stage, pipeline_version)</tspan> — a crash re-runs safely, a reprocess re-derives
+  </text>
+  <text x="56" y="280" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="20" fill="#8DA0BA">
+    from stored bytes without re-downloading, and a poison job dead-letters visibly instead of vanishing.
+  </text>
+</svg>

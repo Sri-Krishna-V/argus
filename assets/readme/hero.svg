@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="480" viewBox="0 0 1200 480"
+     role="img" aria-labelledby="hero-title hero-desc">
+  <title id="hero-title">Argus — research infrastructure where every sentence carries a citation</title>
+  <desc id="hero-desc">Dark title card. Left: the name Argus with the line "Ask a research question. Get a report where every sentence resolves to a real document chunk — or no report at all." Right: an evidence chain showing a claim with two citations resolving to a chunk, a 10-K document and its SEC EDGAR source, above a computed confidence score of 0.62 and the five weights that produced it.</desc>
+
+  <defs>
+    <linearGradient id="edge" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#5AA9FF" stop-opacity="0.30"/>
+      <stop offset="0.55" stop-color="#5AA9FF" stop-opacity="0.04"/>
+      <stop offset="1" stop-color="#8DA0BA" stop-opacity="0.10"/>
+    </linearGradient>
+    <g id="star">
+      <path d="M12 0 L14.2 9.8 L24 12 L14.2 14.2 L12 24 L9.8 14.2 L0 12 L9.8 9.8 Z"/>
+    </g>
+  </defs>
+
+  <rect width="1200" height="480" rx="26" fill="#06080D"/>
+  <rect x="0.75" y="0.75" width="1198.5" height="478.5" rx="25.25" fill="none" stroke="url(#edge)" stroke-width="1.5"/>
+
+  <!-- ============ title block ============ -->
+  <g id="title-block">
+    <use href="#star" x="64" y="74" width="22" height="22" fill="#5AA9FF"/>
+    <text x="98" y="92" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="18"
+          letter-spacing="2.6" fill="#8DA0BA">EVIDENCE INFRASTRUCTURE FOR AI RESEARCH</text>
+
+    <text x="62" y="212" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif"
+          font-size="106" font-weight="700" letter-spacing="-2" fill="#EEF2F8">Argus</text>
+
+    <g font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="28" font-weight="500">
+      <text x="66" y="274" fill="#EEF2F8">Ask a research question. Get a report</text>
+      <text x="66" y="312" fill="#EEF2F8">where every sentence resolves to a real</text>
+      <text x="66" y="350" fill="#EEF2F8">document chunk <tspan fill="#5AA9FF">— or no report at all.</tspan></text>
+    </g>
+
+    <path d="M66 392 H 600" stroke="#8DA0BA" stroke-opacity="0.18" stroke-width="1.5"/>
+    <text x="66" y="428" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="19" fill="#8DA0BA">
+      Postgres 16 + pgvector<tspan fill="#3A4657">&#160;&#160;·&#160;&#160;</tspan>210 tests<tspan fill="#3A4657">&#160;&#160;·&#160;&#160;</tspan>13 ADRs
+    </text>
+  </g>
+
+  <!-- ============ evidence chain (the real data model) ============ -->
+  <g id="evidence-chain" transform="translate(700 40)">
+    <text x="0" y="16" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="17"
+          letter-spacing="2.2" fill="#3A4657">EVIDENCE CHAIN</text>
+
+    <!-- claim -->
+    <g transform="translate(0 30)">
+      <rect width="444" height="100" rx="16" fill="#0C1017" stroke="#8DA0BA" stroke-opacity="0.16"/>
+      <text x="22" y="32" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="16"
+            letter-spacing="1.8" fill="#8DA0BA">DRAFTED CLAIM</text>
+      <g font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="20" fill="#EEF2F8">
+        <text x="22" y="62">Margin compression is guidance-driven,</text>
+        <text x="22" y="86">not demand-driven <tspan font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="18" fill="#5AA9FF">[1][2]</tspan></text>
+      </g>
+    </g>
+
+    <path d="M40 130 V 158" stroke="#5AA9FF" stroke-opacity="0.55" stroke-width="1.5"/>
+    <text x="56" y="154" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="16" fill="#8DA0BA">resolves to</text>
+
+    <!-- resolution -->
+    <g transform="translate(0 166)">
+      <rect width="444" height="112" rx="16" fill="#0C1017" stroke="#8DA0BA" stroke-opacity="0.16"/>
+      <g font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="18">
+        <text x="22" y="36" fill="#5AA9FF">[1]</text>
+        <text x="62" y="36" fill="#EEF2F8">chunk 3f9c21<tspan fill="#3A4657"> → </tspan>10-K FY24</text>
+        <text x="22" y="66" fill="#5AA9FF">[2]</text>
+        <text x="62" y="66" fill="#EEF2F8">chunk 8b41d0<tspan fill="#3A4657"> → </tspan>Q3 call</text>
+        <text x="22" y="96" fill="#3A4657">src</text>
+        <text x="62" y="96" fill="#8DA0BA">sec_edgar · immutable</text>
+      </g>
+    </g>
+
+    <!-- confidence -->
+    <g transform="translate(0 294)">
+      <rect width="444" height="122" rx="16" fill="#0C1017" stroke="#5AA9FF" stroke-opacity="0.28"/>
+      <text x="22" y="32" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="16"
+            letter-spacing="1.6" fill="#8DA0BA">CONFIDENCE — COMPUTED, NOT GENERATED</text>
+
+      <text x="22" y="76" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif"
+            font-size="36" font-weight="700" fill="#5AA9FF">0.62</text>
+
+      <g transform="translate(126 56)">
+        <rect width="58" height="10" rx="5" fill="#5AA9FF" fill-opacity="0.85"/>
+        <rect x="73" width="36" height="10" rx="5" fill="#5AA9FF" fill-opacity="0.50"/>
+        <rect x="124" width="48" height="10" rx="5" fill="#5AA9FF" fill-opacity="0.70"/>
+        <rect x="187" width="36" height="10" rx="5" fill="#5AA9FF" fill-opacity="0.50"/>
+        <rect x="238" width="58" height="10" rx="5" fill="#5AA9FF" fill-opacity="0.85"/>
+      </g>
+
+      <text x="22" y="104" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="16"
+            fill="#8DA0BA">5 weighted components, all returned</text>
+    </g>
+  </g>
+</svg>

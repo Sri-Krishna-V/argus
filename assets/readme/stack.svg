@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="520" viewBox="0 0 1200 520"
+     role="img" aria-labelledby="stack-title stack-desc">
+  <title id="stack-title">The layer contract</title>
+  <desc id="stack-desc">Nine layers of one modular monolith, listed top to bottom in strict import order: api, evals, investigations, agentruntime, research, dataplatform, knowledge, observability, core. Only agentruntime may import AI code; everything below it is deterministic. The order is enforced by import-linter in CI rather than by code review.</desc>
+
+  <rect width="1200" height="520" rx="26" fill="#06080D"/>
+  <rect x="0.75" y="0.75" width="1198.5" height="518.5" rx="25.25" fill="none" stroke="#8DA0BA" stroke-opacity="0.14" stroke-width="1.5"/>
+
+  <text x="56" y="56" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="17"
+        letter-spacing="2.4" fill="#8DA0BA">THE LAYER CONTRACT — IMPORTS ONLY EVER POINT DOWN</text>
+
+  <g font-family="ui-monospace,SFMono-Regular,Menlo,monospace">
+    <!-- rows: y step 44 -->
+    <g transform="translate(56 78)">
+      <rect width="1088" height="40" rx="10" fill="#0C1017" stroke="#8DA0BA" stroke-opacity="0.14"/>
+      <text x="20" y="27" font-size="20" fill="#EEF2F8">api/</text>
+      <text x="250" y="27" font-size="19" fill="#8DA0BA" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif">FastAPI routes, auth, rate limits — serves the React dashboard</text>
+    </g>
+    <g transform="translate(56 122)">
+      <rect width="1088" height="40" rx="10" fill="#0C1017" stroke="#8DA0BA" stroke-opacity="0.14"/>
+      <text x="20" y="27" font-size="20" fill="#EEF2F8">evals/</text>
+      <text x="250" y="27" font-size="19" fill="#8DA0BA" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif">Scores retrieval and investigation quality against a golden set</text>
+    </g>
+    <g transform="translate(56 166)">
+      <rect width="1088" height="40" rx="10" fill="#0C1017" stroke="#8DA0BA" stroke-opacity="0.14"/>
+      <text x="20" y="27" font-size="20" fill="#EEF2F8">investigations/</text>
+      <text x="250" y="27" font-size="19" fill="#8DA0BA" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif">Task DAG, lifecycle, confidence, versioned reports, replay</text>
+    </g>
+
+    <g transform="translate(56 210)">
+      <rect width="1088" height="48" rx="10" fill="#0C1017" stroke="#5AA9FF" stroke-opacity="0.5"/>
+      <text x="20" y="31" font-size="20" fill="#5AA9FF">agentruntime/</text>
+      <text x="250" y="31" font-size="19" fill="#5AA9FF" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif">The only layer allowed to touch a model. One module imports the SDK.</text>
+    </g>
+
+    <g transform="translate(56 266)">
+      <rect width="1088" height="40" rx="10" fill="#0C1017" stroke="#8DA0BA" stroke-opacity="0.14"/>
+      <text x="20" y="27" font-size="20" fill="#EEF2F8">research/</text>
+      <text x="250" y="27" font-size="19" fill="#8DA0BA" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif">Hybrid retrieval (FTS + pgvector, RRF), ranking, citation resolution</text>
+    </g>
+    <g transform="translate(56 310)">
+      <rect width="1088" height="40" rx="10" fill="#0C1017" stroke="#8DA0BA" stroke-opacity="0.14"/>
+      <text x="20" y="27" font-size="20" fill="#EEF2F8">dataplatform/</text>
+      <text x="250" y="27" font-size="19" fill="#8DA0BA" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif">Connectors, the 7-stage pipeline, chunking, embeddings</text>
+    </g>
+    <g transform="translate(56 354)">
+      <rect width="1088" height="40" rx="10" fill="#0C1017" stroke="#8DA0BA" stroke-opacity="0.14"/>
+      <text x="20" y="27" font-size="20" fill="#EEF2F8">knowledge/</text>
+      <text x="250" y="27" font-size="19" fill="#8DA0BA" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif">Canonical entities, resolution, provenance-carrying graph edges</text>
+    </g>
+    <g transform="translate(56 398)">
+      <rect width="1088" height="40" rx="10" fill="#0C1017" stroke="#8DA0BA" stroke-opacity="0.14"/>
+      <text x="20" y="27" font-size="20" fill="#EEF2F8">observability/</text>
+      <text x="250" y="27" font-size="19" fill="#8DA0BA" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif">Pipeline runs, stage attempts, dead-letter visibility</text>
+    </g>
+    <g transform="translate(56 442)">
+      <rect width="1088" height="40" rx="10" fill="#0C1017" stroke="#8DA0BA" stroke-opacity="0.14"/>
+      <text x="20" y="27" font-size="20" fill="#EEF2F8">core/</text>
+      <text x="250" y="27" font-size="19" fill="#8DA0BA" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif">Config, sessions, append-only events, the outbox job queue</text>
+    </g>
+  </g>
+
+  <path d="M32 90 V 468" stroke="#8DA0BA" stroke-opacity="0.25" stroke-width="1.5"/>
+  <path d="M26 462 l 6 8 l 6 -8 z" fill="#8DA0BA" fill-opacity="0.6"/>
+</svg>
