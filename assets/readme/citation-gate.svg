@@ -7,7 +7,7 @@
   <rect x="0.75" y="0.75" width="1198.5" height="428.5" rx="25.25" fill="none" stroke="#8DA0BA" stroke-opacity="0.14" stroke-width="1.5"/>
 
   <text x="56" y="58" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="17"
-        letter-spacing="2.4" fill="#8DA0BA">THE CITATION GATE — WHERE HALLUCINATED SOURCES DIE</text>
+        letter-spacing="2.4" fill="#8DA0BA">THE CITATION GATE: WHERE HALLUCINATED SOURCES DIE</text>
 
   <!-- draft -->
   <g transform="translate(56 92)">
@@ -61,7 +61,7 @@
   <g font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="20" fill="#8DA0BA">
     <text x="56" y="296">Retrieval, ranking, citation resolution</text>
     <text x="56" y="324">and scoring are deterministic code.</text>
-    <text x="56" y="352">The model plans and writes — it never</text>
+    <text x="56" y="352">The model plans and writes. It never</text>
     <text x="56" y="380">decides what is true.</text>
   </g>
 </svg>
