@@ -1,23 +1,37 @@
 import { StagePayload, type PayloadKind } from "@/components/landing/stage-payload"
 import {
   fmt,
+  shortDate,
   useActiveIndex,
   useCountUp,
   useCorpus,
-  useStageRuns,
+  usePipelineFacts,
+  SNAPSHOT,
   type CorpusMetrics,
 } from "@/lib/landing"
 
 const MICRO = "font-mono text-[11px] uppercase tracking-[0.14em] text-muted-foreground"
+
+interface Facts {
+  corpus: CorpusMetrics
+  dead: number
+}
+
+interface Figure {
+  value: number
+  unit: string
+  /** corpus figures fall back to a dated snapshot; pipeline and static ones do not */
+  source: "corpus" | "pipeline" | "static"
+}
 
 interface Stage {
   kind: PayloadKind
   title: string
   body: string
   event: string
-  /** the live figure this stage produces, read off the corpus totals */
-  figure: (c: CorpusMetrics) => number
-  unit: string
+  /** The artifact only this stage produces. Stages that derive no new count of their own
+   *  carry none — five stages sharing two numbers is padding, not evidence. */
+  figure?: (f: Facts) => Figure
   /** wide stages break the reading rhythm — the visual takes the full measure */
   wide?: boolean
 }
@@ -28,40 +42,38 @@ const STAGES: Stage[] = [
     title: "Raw bytes become a row that can never change",
     body: "A filing is stored by the hash of its own content, then registered as a document. A database trigger rejects any update to it — only status and version advance. Everything downstream is re-derivable from the bytes on disk.",
     event: "document.parsed",
-    figure: (c) => c.documents,
-    unit: "documents",
+    figure: ({ corpus }) => ({ value: corpus.documents, unit: "documents ingested", source: "corpus" }),
   },
   {
     kind: "extract_metadata",
     title: "Metadata is lifted from the source, not guessed",
     body: "Title, publisher, filing date and document type come out of the document itself. A field the source does not carry stays empty rather than becoming a plausible invention.",
     event: "document.metadata_extracted",
-    figure: (c) => c.documents,
-    unit: "documents described",
   },
   {
     kind: "extract_entities",
     title: "Mentions resolve to canonical companies",
     body: "“Meta”, “Meta Platforms, Inc.” and a bare CIK are one company or the graph is worthless. Each mention keeps its offset in the source text, so a resolution can always be audited back to the sentence that produced it.",
     event: "document.entities_extracted",
-    figure: (c) => c.entity_mentions,
-    unit: "entity mentions",
+    figure: ({ corpus }) => ({
+      value: corpus.entity_mentions,
+      unit: "resolved mentions",
+      source: "corpus",
+    }),
   },
   {
     kind: "chunk",
     title: "The document is cut into citable passages",
     body: "Roughly 250 words each. This is the unit every citation in every report points at — the reason a claim can be checked in one click instead of being traced through a whole filing.",
     event: "document.chunked",
-    figure: (c) => c.chunks,
-    unit: "chunks",
+    figure: ({ corpus }) => ({ value: corpus.chunks, unit: "citable chunks", source: "corpus" }),
   },
   {
     kind: "embed",
     title: "Each passage becomes a vector, in the same database",
     body: "384 dimensions, indexed with HNSW inside the one Postgres instance that already holds the rows, the full-text index, the graph, the event log and the job queue. There is no separate vector store to keep in sync.",
     event: "document.embedded",
-    figure: (c) => c.chunks,
-    unit: "vectors indexed",
+    figure: () => ({ value: 384, unit: "dimensions per chunk", source: "static" }),
     wide: true,
   },
   {
@@ -69,8 +81,7 @@ const STAGES: Stage[] = [
     title: "Edges carry their provenance or they are not written",
     body: "Companies, documents and relationships become nodes and edges. Every edge names the document it was derived from, which is what makes the graph auditable rather than merely queryable.",
     event: "document.graph_built",
-    figure: (c) => c.graph_edges,
-    unit: "graph edges",
+    figure: ({ corpus }) => ({ value: corpus.graph_edges, unit: "graph edges", source: "corpus" }),
     wide: true,
   },
   {
@@ -78,21 +89,34 @@ const STAGES: Stage[] = [
     title: "Retrievable and citable, or the job goes back on the queue",
     body: "The last stage checks the derived artifacts actually exist. Stages are idempotent on document, stage and pipeline version, so a retry is always safe and a failure is never silent — it lands in the dead-letter queue where you can see it.",
     event: "document.enriched",
-    figure: (c) => c.documents,
-    unit: "documents citable",
+    figure: ({ dead }) => ({ value: dead, unit: "jobs dead-lettered", source: "pipeline" }),
   },
 ]
 
 export const STAGE_COUNT = STAGES.length
 
-function Figure({ value, unit, run }: { value: number; unit: string; run: boolean }) {
-  const shown = useCountUp(value, run)
+function StageFigure({
+  figure,
+  run,
+  corpusLive,
+}: {
+  figure: Figure
+  run: boolean
+  corpusLive: boolean
+}) {
+  const shown = useCountUp(figure.value, run)
+  const stale = figure.source === "corpus" && !corpusLive
   return (
     <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
       <span className="text-3xl font-light tracking-[-0.02em] tabular-nums text-white">
         {fmt.format(shown)}
       </span>
-      <span className={MICRO}>{unit}</span>
+      <span className={MICRO}>{figure.unit}</span>
+      {stale && (
+        <span className={`${MICRO} text-muted-foreground/80`}>
+          snapshot · {shortDate(`${SNAPSHOT.taken}T00:00:00Z`)}
+        </span>
+      )}
     </div>
   )
 }
@@ -169,7 +193,8 @@ function MobileRail({ active }: { active: number }) {
 export function Descent() {
   const { active, register } = useActiveIndex(STAGES.length)
   const { corpus, live } = useCorpus()
-  const runs = useStageRuns()
+  const { runs, dead } = usePipelineFacts()
+  const facts: Facts = { corpus, dead }
 
   return (
     <div className="mx-auto flex w-full max-w-6xl gap-0 px-5 sm:px-8">
@@ -208,7 +233,9 @@ export function Descent() {
                       {stage.body}
                     </p>
                     <div className="mt-8 flex flex-col gap-2">
-                      <Figure value={stage.figure(corpus)} unit={stage.unit} run={reached} />
+                      {stage.figure && (
+                        <StageFigure figure={stage.figure(facts)} run={reached} corpusLive={live} />
+                      )}
                       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[11px] tracking-[0.1em] text-muted-foreground/80">
                         <span>{stage.event}</span>
                         {run && run.ms !== null && (
@@ -221,7 +248,6 @@ export function Descent() {
                         {run && run.runs > 0 && (
                           <span className="tabular-nums">{fmt.format(run.runs)} runs · 24h</span>
                         )}
-                        {!live && <span>snapshot</span>}
                       </div>
                     </div>
                   </div>

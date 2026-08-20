@@ -1,8 +1,8 @@
 import { Link } from "@tanstack/react-router"
 import { ArrowRightIcon, ArrowUpRightIcon } from "lucide-react"
-import { ConfidenceMeter } from "@/components/confidence-meter"
+import { SignalRidge } from "@/components/signal-ridge"
 import { Skeleton } from "@/components/ui/skeleton"
-import { shortDate, useShowcase, type Showcase } from "@/lib/landing"
+import { SNAPSHOT_EVIDENCE, shortDate, useShowcase } from "@/lib/landing"
 import type { Investigation } from "@/lib/types"
 
 const MICRO = "font-mono text-[11px] uppercase tracking-[0.14em] text-muted-foreground"
@@ -13,54 +13,56 @@ const SOURCE_LABEL: Record<string, string> = {
   company_profiles: "Company profile",
 }
 
-/** Read off the live deployment on 2026-08-20 and kept verbatim, for the case where the
- *  API cannot be reached. Real filing text either way — never a written-for-the-page
- *  quote, and never presented as live. */
-const SNAPSHOT_EVIDENCE: Showcase & { snapshot: string } = {
-  snapshot: "2026-08-20",
-  model: "canned-demo",
-  investigation: {
-    id: "6368a62b-2b39-4377-9f63-a843d35d7947",
-    question: "Which chipmakers are exposed to AI demand swings?",
-    status: "complete",
-    confidence: 0.851,
-    confidence_breakdown: {
-      score: 0.851,
-      components: {
-        recency: { value: 1, weight: 0.15 },
-        document_count: { value: 1, weight: 0.15 },
-        source_quality: { value: 1, weight: 0.2 },
-        source_diversity: { value: 0.6667, weight: 0.25 },
-        stance_agreement: { value: 0.7391, weight: 0.25 },
-      },
-      evidence_count: 23,
-    },
-    version: 1,
-    created_at: "2026-08-20T03:38:00.000Z",
-    last_refreshed_at: null,
-    new_evidence_available: false,
-  } as Investigation,
-  citation: {
-    index: 2,
-    chunk_id: "9eaeefdb-78cc-4553-81a0-0043b8af5940",
-    document_id: "30435502-bab9-40bf-b1e4-e86efc36147b",
-    title: "MICROSOFT CORP 10-Q 2026-04-29",
-    url: "https://www.sec.gov/Archives/edgar/data/789019/000119312526191507/msft-20260331.htm",
-    source: "sec_edgar",
-    published_at: "2026-04-29T00:00:00Z",
-    excerpt:
-      "The investments we are making in cloud and AI infrastructure and devices will continue to increase our operating costs and may decrease our operating margins. We continue to identify and evaluate opportunities to expand our datacenter locations.",
-  },
+const COMPONENT_LABEL: Record<string, string> = {
+  source_diversity: "Source diversity",
+  document_count: "Document count",
+  source_quality: "Source quality",
+  recency: "Recency",
+  stance_agreement: "Stance agreement",
 }
 
 /** Chunk excerpts arrive truncated at a fixed length, which lands mid-word. Cut back to
  *  the last finished sentence, or failing that the last whole word. */
 function tidy(excerpt: string): string {
   const text = excerpt.trim().replace(/\s+/g, " ")
-  const lastStop = Math.max(text.lastIndexOf(". "), text.lastIndexOf(".\u201d"))
+  const lastStop = Math.max(text.lastIndexOf(". "), text.lastIndexOf(".”"))
   if (lastStop > text.length * 0.5) return text.slice(0, lastStop + 1)
   const lastSpace = text.lastIndexOf(" ")
-  return lastSpace > 0 ? `${text.slice(0, lastSpace)}\u2026` : text
+  return lastSpace > 0 ? `${text.slice(0, lastSpace)}…` : text
+}
+
+function ConfidenceBlock({ inv }: { inv: Investigation }) {
+  const components = Object.entries(inv.confidence_breakdown?.components ?? {})
+  const pct = inv.confidence !== null ? Math.round(inv.confidence * 100) : null
+
+  return (
+    <div>
+      <span className={MICRO}>Computed confidence</span>
+      <div className="mt-5 flex items-end gap-5">
+        <span className="text-6xl leading-none font-light tracking-[-0.03em] tabular-nums text-white">
+          {pct ?? "—"}
+          <span className="text-2xl text-muted-foreground">%</span>
+        </span>
+        <div className="relative h-16 min-w-0 flex-1 overflow-hidden rounded-sm">
+          <SignalRidge className="absolute inset-0 h-full w-full" amplitude={inv.confidence ?? 0} />
+        </div>
+      </div>
+      <dl className="mt-7 flex flex-col gap-2.5 border-t border-border pt-5 font-mono text-[11px] tracking-[0.08em]">
+        {components.map(([key, component]) => (
+          <div key={key} className="flex items-baseline justify-between gap-4">
+            <dt className="text-muted-foreground">{COMPONENT_LABEL[key] ?? key}</dt>
+            <dd className="shrink-0 tabular-nums text-white">
+              {Math.round(component.value * 100)}%
+              <span className="text-muted-foreground"> ×{component.weight}</span>
+            </dd>
+          </div>
+        ))}
+      </dl>
+      <p className="mt-6 text-sm leading-relaxed text-muted-foreground">
+        Five weighted inputs, evaluated in code. No model is asked how sure it is.
+      </p>
+    </div>
+  )
 }
 
 export function EvidenceClose() {
@@ -82,35 +84,35 @@ export function EvidenceClose() {
         </p>
 
         {pending ? (
-          <div className="mt-14 grid gap-12 lg:grid-cols-[minmax(0,1fr)_25rem]">
-            <div className="flex flex-col gap-4">
-              <Skeleton className="h-8 w-3/4" />
-              <Skeleton className="h-28 w-full" />
+          <div className="mt-14 grid gap-12 lg:grid-cols-[minmax(0,1fr)_26rem]">
+            <div className="flex flex-col gap-5">
+              <Skeleton className="h-5 w-2/3" />
+              <Skeleton className="h-32 w-full" />
               <Skeleton className="h-4 w-1/2" />
             </div>
-            <Skeleton className="h-40 w-full" />
+            <Skeleton className="h-48 w-full" />
           </div>
         ) : (
-          <div className="mt-14 grid items-start gap-12 lg:grid-cols-[minmax(0,1fr)_25rem] lg:gap-16">
+          <div className="mt-14 grid items-start gap-14 lg:grid-cols-[minmax(0,1fr)_26rem] lg:gap-20">
             <div className="min-w-0">
-              <span className={MICRO}>Research question</span>
-              <p className="mt-3 text-2xl leading-snug font-light tracking-[-0.015em] text-white">
-                {investigation.question}
+              <p className="leading-relaxed text-muted-foreground">
+                Asked of the corpus: <span className="text-white">{investigation.question}</span>
               </p>
 
-              <blockquote className="mt-10 border-l border-border pl-5">
-                <p className="max-w-[68ch] leading-[1.7] text-foreground/90">
+              <blockquote className="mt-8 border-l border-primary/50 pl-6">
+                <p className="max-w-[44rem] text-2xl leading-[1.35] font-light tracking-[-0.02em] text-white sm:text-[1.75rem]">
                   {tidy(citation.excerpt)}
                 </p>
               </blockquote>
 
-              <div className="mt-5 flex flex-col gap-1.5 pl-5 font-mono text-[11px] tracking-[0.1em] text-muted-foreground">
-                <span>
+              <div className="mt-6 flex flex-col gap-2 pl-6 font-mono text-[11px] tracking-[0.1em] text-muted-foreground">
+                <span className="[overflow-wrap:anywhere]">
                   chunk:{citation.chunk_id.slice(0, 8)}
-                  <span className="text-muted-foreground/50">{citation.chunk_id.slice(8)}</span>
+                  <span className="text-muted-foreground/80">{citation.chunk_id.slice(8)}</span>
                 </span>
                 <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                  <span className="text-white/70">{SOURCE_LABEL[citation.source] ?? citation.source}</span>
+                  <span className="text-white/70">cited as evidence</span>
+                  <span>{SOURCE_LABEL[citation.source] ?? citation.source}</span>
                   <span>{shortDate(citation.published_at)}</span>
                   {citation.url && (
                     <a
@@ -143,19 +145,15 @@ export function EvidenceClose() {
                   <ArrowRightIcon className="size-4 transition-transform group-hover:translate-x-0.5" />
                 </Link>
                 {isSnapshot && (
-                  <span className={MICRO}>snapshot · {SNAPSHOT_EVIDENCE.snapshot}</span>
+                  <span className={MICRO}>
+                    snapshot · {shortDate(`${SNAPSHOT_EVIDENCE.snapshot}T00:00:00Z`)}
+                  </span>
                 )}
               </div>
             </div>
 
-            <div className="lg:sticky lg:top-16">
-              <span className={MICRO}>Computed confidence</span>
-              <div className="mt-4">
-                <ConfidenceMeter inv={investigation} />
-              </div>
-              <p className="mt-5 text-sm leading-relaxed text-muted-foreground">
-                Five weighted inputs, evaluated in code. No model is asked how sure it is.
-              </p>
+            <div className="lg:sticky lg:top-20">
+              <ConfidenceBlock inv={investigation} />
             </div>
           </div>
         )}

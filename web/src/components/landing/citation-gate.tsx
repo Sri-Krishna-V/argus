@@ -52,7 +52,7 @@ export function CitationGate() {
                   </>
                 ) : (
                   <>
-                    <span className="text-muted-foreground/60">no source</span>
+                    <span className="text-muted-foreground/80">no source</span>
                     <span className="text-destructive">rejected</span>
                   </>
                 )}

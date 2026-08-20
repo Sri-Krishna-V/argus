@@ -23,7 +23,7 @@ export const SNAPSHOT: { taken: string; corpus: CorpusMetrics } = {
     entity_mentions: 1163,
     graph_edges: 153,
     investigations_complete: 7,
-    latest_document_at: "2026-08-20T00:00:00Z",
+    latest_document_at: "2026-08-20T03:37:47.213626Z",
   },
 }
 
@@ -45,22 +45,26 @@ export interface StageRun {
 /** `stages_24h` is a rolling 24-hour window: on an idle deployment it is empty, and the
  *  rail has to read correctly at zero. Stage identity and order are static truth; only
  *  the throughput figures are live. */
-export function useStageRuns(): Record<string, StageRun> {
+export function usePipelineFacts(): {
+  runs: Record<string, StageRun>
+  dead: number
+  live: boolean
+} {
   const { data } = useQuery({
     queryKey: ["metrics", "pipeline"],
     queryFn: () => api.get<PipelineMetrics>("/api/metrics/pipeline"),
     staleTime: 60_000,
     retry: 1,
   })
-  const out: Record<string, StageRun> = {}
+  const runs: Record<string, StageRun> = {}
   for (const row of data?.stages_24h ?? []) {
-    const prev = out[row.stage] ?? { runs: 0, ms: null }
-    out[row.stage] = {
+    const prev = runs[row.stage] ?? { runs: 0, ms: null }
+    runs[row.stage] = {
       runs: prev.runs + row.runs,
       ms: row.status === "success" ? row.avg_duration_ms : prev.ms,
     }
   }
-  return out
+  return { runs, dead: data?.queue_depth?.dead ?? 0, live: Boolean(data) }
 }
 
 /** Filings are mostly boilerplate: disclosure-controls language, incorporation by
@@ -73,22 +77,56 @@ const FURNITURE =
 const SUBSTANCE =
   /investment|revenue|margin|demand|growth|cost|customer|competit|antitrust|supply|capacity|datacenter|infrastructure|regulat/i
 
-function passageScore(c: Citation): number {
-  const text = c.excerpt.trim()
+const STOPWORDS = new Set([
+  "what", "which", "does", "did", "do", "is", "are", "was", "were", "the", "a", "an", "of",
+  "in", "on", "for", "to", "and", "or", "its", "their", "his", "her", "most", "recent",
+  "identify", "describe", "about", "how", "why", "any", "has", "have", "been", "that",
+])
+
+function terms(question: string): string[] {
+  return [
+    ...new Set(
+      question
+        .toLowerCase()
+        .replace(/[^a-z\s]/g, " ")
+        .split(/\s+/)
+        .filter((w) => w.length > 3 && !STOPWORDS.has(w))
+        .map((w) => w.replace(/(ies|s)$/, "")),
+    ),
+  ]
+}
+
+/** A passage shown under a question has to bear on that question — a real excerpt about
+ *  VR headsets under "quarterly financial results" is the one thing a sceptic checks. */
+function passageScore(c: Citation, question: string): number {
+  // filings arrive with non-breaking spaces in them, so "Note\u00a08" only matches the
+  // boilerplate patterns once the whitespace is normalised
+  const text = c.excerpt.trim().replace(/\s+/g, " ")
   if (FURNITURE.test(text)) return 0
+
+  const body = text.toLowerCase()
+  const title = (c.title ?? "").toLowerCase()
   let score = 1
-  if (/^(we|our)\b/i.test(text) || /\b(we|our)\b/i.test(text.slice(0, 70))) score += 3
-  if (SUBSTANCE.test(text)) score += 3
-  if (/\d/.test(text)) score += 1
+  // the passage should at least come from the filing the question is about
+  for (const term of terms(question)) {
+    if (body.includes(term)) score += 3
+    else if (title.includes(term)) score += 4
+  }
+  if (/^(we|our)\b/i.test(text) || /\b(we|our)\b/i.test(text.slice(0, 70))) score += 2
+  if (SUBSTANCE.test(text)) score += 2
   if (/\$|%|billion|million/i.test(text)) score += 2
+  if (/\d/.test(text)) score += 1
   if (c.url) score += 1
   return score
 }
 
-function pickPassage(citations: Citation[]): { citation: Citation; score: number } | null {
+function pickPassage(
+  citations: Citation[],
+  question: string,
+): { citation: Citation; score: number } | null {
   const ranked = citations
     .filter((c) => c.excerpt.trim().length > 120)
-    .map((c) => ({ citation: c, score: passageScore(c) }))
+    .map((c) => ({ citation: c, score: passageScore(c, question) }))
     .filter((x) => x.score > 0)
     .sort((a, b) => b.score - a.score)
   return ranked[0] ?? null
@@ -128,7 +166,7 @@ export function useShowcase() {
   const best = finished
     .map((investigation, i) => {
       const report = reports[i]?.data
-      const picked = report ? pickPassage(report.citations ?? []) : null
+      const picked = report ? pickPassage(report.citations ?? [], investigation.question) : null
       return picked ? { investigation, citation: picked.citation, model: report!.model, score: picked.score } : null
     })
     .filter((x): x is Showcase & { score: number } => x !== null)
@@ -142,6 +180,46 @@ export function useShowcase() {
     showcase,
     pending: investigations.isPending || reports.some((r) => r.isPending),
   }
+}
+
+/** Read off the live deployment on 2026-08-20 and kept verbatim, for the case where the
+ *  API cannot be reached. Real filing text either way — never a written-for-the-page
+ *  quote, and never presented as live. */
+export const SNAPSHOT_EVIDENCE: Showcase & { snapshot: string } = {
+  snapshot: "2026-08-20",
+  model: "canned-demo",
+  investigation: {
+    id: "6368a62b-2b39-4377-9f63-a843d35d7947",
+    question: "Which chipmakers are exposed to AI demand swings?",
+    status: "complete",
+    confidence: 0.851,
+    confidence_breakdown: {
+      score: 0.851,
+      components: {
+        recency: { value: 1, weight: 0.15 },
+        document_count: { value: 1, weight: 0.15 },
+        source_quality: { value: 1, weight: 0.2 },
+        source_diversity: { value: 0.6667, weight: 0.25 },
+        stance_agreement: { value: 0.7391, weight: 0.25 },
+      },
+      evidence_count: 23,
+    },
+    version: 1,
+    created_at: "2026-08-20T03:38:00.000Z",
+    last_refreshed_at: null,
+    new_evidence_available: false,
+  } as Investigation,
+  citation: {
+    index: 2,
+    chunk_id: "9eaeefdb-78cc-4553-81a0-0043b8af5940",
+    document_id: "30435502-bab9-40bf-b1e4-e86efc36147b",
+    title: "MICROSOFT CORP 10-Q 2026-04-29",
+    url: "https://www.sec.gov/Archives/edgar/data/789019/000119312526191507/msft-20260331.htm",
+    source: "sec_edgar",
+    published_at: "2026-04-29T00:00:00Z",
+    excerpt:
+      "The investments we are making in cloud and AI infrastructure and devices will continue to increase our operating costs and may decrease our operating margins. We continue to identify and evaluate opportunities to expand our datacenter locations.",
+  },
 }
 
 /** One observer, one active index — drives the rail and the counters together. */

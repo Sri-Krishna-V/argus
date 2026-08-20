@@ -6,7 +6,7 @@ import { StarGlyph } from "@/components/star-glyph"
 import { CitationGate } from "@/components/landing/citation-gate"
 import { Descent, STAGE_COUNT } from "@/components/landing/descent"
 import { EvidenceClose } from "@/components/landing/evidence-close"
-import { shortDate, useShowcase } from "@/lib/landing"
+import { SNAPSHOT_EVIDENCE, shortDate, useShowcase } from "@/lib/landing"
 import { useDemoMode } from "@/lib/demo"
 
 export const Route = createFileRoute("/")({
@@ -60,24 +60,19 @@ function Header() {
 
 function FilingPlate() {
   const { showcase } = useShowcase()
-  const citation = showcase?.citation
-  const title = citation?.title ?? "Meta Platforms, Inc. 10-Q 2026-07-30"
-  const filed = shortDate(citation?.published_at ?? "2026-07-30T00:00:00Z")
+  const citation = showcase?.citation ?? SNAPSHOT_EVIDENCE.citation
 
   return (
-    <figure className="w-full max-w-[26rem] rounded-md border border-border bg-card/70 p-4 backdrop-blur-sm">
+    <figure className="w-full max-w-[27rem] rounded-md border border-border bg-card/70 p-4 backdrop-blur-sm">
       <figcaption className="flex items-center justify-between gap-4">
-        <span className={MICRO}>SEC EDGAR</span>
-        <span className={`${MICRO} tabular-nums`}>filed {filed}</span>
+        <span className={MICRO}>{citation.source === "sec_edgar" ? "SEC EDGAR" : citation.source}</span>
+        <span className={`${MICRO} tabular-nums`}>filed {shortDate(citation.published_at)}</span>
       </figcaption>
-      <p className="mt-3 font-mono text-[12px] leading-relaxed text-white/90">{title}</p>
-      <svg viewBox="0 0 320 34" className="mt-4 h-auto w-full" aria-hidden>
-        <g className="stroke-muted-foreground/35" strokeWidth="1.5" strokeLinecap="round">
-          {[276, 240, 296, 208, 262].map((w, i) => (
-            <line key={i} x1="0" y1={3 + i * 7} x2={w} y2={3 + i * 7} />
-          ))}
-        </g>
-      </svg>
+      <p className="mt-3 font-mono text-[12px] leading-relaxed text-white/90">{citation.title}</p>
+      {/* the filing's own words, faded out rather than faked with placeholder strokes */}
+      <p className="mt-4 max-h-[5.5rem] overflow-hidden text-[13px] leading-[1.55] text-muted-foreground [mask-image:linear-gradient(to_bottom,black_40%,transparent_100%)]">
+        {citation.excerpt.trim()}
+      </p>
     </figure>
   )
 }
@@ -103,7 +98,7 @@ function Hero() {
   return (
     <section id="top" className="relative overflow-hidden border-b border-border">
       <SignalRidge className="absolute inset-0 h-full w-full" />
-      <div className="absolute inset-0 bg-gradient-to-r from-background via-background/70 to-transparent" />
+      <div className="absolute inset-0 bg-gradient-to-r from-background/85 via-background/30 to-transparent" />
       <div className="relative mx-auto flex w-full max-w-6xl flex-col gap-12 px-5 pt-16 pb-20 sm:px-8 sm:pt-24 sm:pb-28">
         <FilingPlate />
         <div>
