@@ -16,6 +16,19 @@ claim in every report resolves back to a chunk of a real, ingested document — 
 a citation is rejected before it ever reaches a report, and confidence in that report is a
 computed number, not something the model says about itself.
 
+## Live demo
+
+**[argusops.vercel.app](https://argusops.vercel.app)** — a read-only deployment over a live
+corpus of real SEC filings and news. No key needed to look around; every write endpoint still
+requires one, so the demo cannot be altered from the browser.
+
+What is real: the corpus (SEC EDGAR + RSS connectors), the pipeline, hybrid retrieval,
+near-duplicate dedup, source ranking, the task DAG, the citation gate, and every confidence
+score. What is not: the language model. The demo runs `ARGUS_LLM_PROVIDER=demo`, a
+deterministic canned runtime that stands in for the LLM at the adapter boundary, so plans,
+stances and report prose are scripted — every report says so, and carries `model=canned-demo`
+([ADR-0014](docs/adr/0014-demo-mode.md)).
+
 ## Why this project exists
 
 Enterprise AI is a systems engineering problem, not an LLM problem. Anyone can wire a chatbot
@@ -281,7 +294,23 @@ make stack     # build and run the full app (postgres + api + worker) in contain
 make eval      # score retrieval and investigation quality against the golden set
 make backup    # pg_dump + raw-store tarball into backups/
 make restore   # restore from a backup: make restore DB_DUMP=... RAW_TGZ=...
+make demo-seed # build the demo investigation set over the ingested corpus
 ```
+
+To stand up a demo deployment of your own, set `ARGUS_DEMO_MODE=1` (anonymous reads, keyed
+writes), `ARGUS_LLM_PROVIDER=demo` (no LLM key needed) and `ARGUS_API_KEY` to something only
+you hold, ingest a corpus, then seed:
+
+```bash
+argus ingest company_profiles && argus ingest sec_edgar && argus ingest rss
+argus status          # wait for the queue to drain
+argus demo seed       # add --reset to rebuild an existing demo set
+```
+
+The containerized raw store is the `rawstore` named volume (the image owns its mount
+point, so ingestion works regardless of the host uid). Upgrading a deployment that still
+has a populated `./data/raw` from the old bind mount needs a one-time
+`docker compose cp data/raw api:/app/data/`, or re-derivation loses its inputs.
 
 ## CLI usage
 
@@ -295,6 +324,7 @@ argus reprocess --stage parse --pipeline-version 2   # re-derive artifacts, no r
 argus retry-dead           # requeue dead-lettered jobs
 argus eval retrieval       # score retrieval against evals/golden.json
 argus eval investigation   # score investigation quality
+argus demo seed            # build the public demo investigation set (ADR-0014)
 argus worker               # run the pipeline worker + connector scheduler (plain JSON logs, for machines)
 ```
 

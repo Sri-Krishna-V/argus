@@ -94,8 +94,50 @@
     }
   body {
     @apply bg-background text-foreground;
+    caret-color: var(--primary);
     }
   html {
     @apply font-sans;
+    scroll-behavior: smooth;
+    /* the landing page header is sticky; anchor targets clear it */
+    scroll-padding-top: 4.5rem;
+    scrollbar-color: rgba(148, 163, 184, 0.28) transparent;
+    scrollbar-width: thin;
+    }
+
+  /* Surfaces the design does not draw itself still belong to it. */
+  ::selection {
+    background-color: rgba(232, 165, 127, 0.28);
+    color: #fff;
+    }
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+    }
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+    }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+    }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(148, 163, 184, 0.22);
+    background-clip: content-box;
+    border: 2px solid transparent;
+    border-radius: 9999px;
+    }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(148, 163, 184, 0.4);
+    background-clip: content-box;
+    }
+  a {
+    text-underline-offset: 0.2em;
+    }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+      }
     }
 }

@@ -13,9 +13,14 @@ class Settings(BaseSettings):
 
     # when set, /api/* requires X-API-Key or Bearer token; empty disables auth (dev default)
     api_key: str = ""
+    # public demo: reads on /api/* need no key, every write still does (ADR-0014)
+    demo_mode: bool = False
     max_body_bytes: int = 1_048_576  # request bodies above this are rejected with 413
     # POST /api/investigations (and the UI form) per client IP; 0 disables
     rate_limit_investigations_per_minute: int = 6
+    # GET /api/search per client IP — the one anonymous endpoint with real CPU cost
+    # (query embedding + pgvector scan); 0 disables
+    rate_limit_search_per_minute: int = 60
 
     pipeline_version: int = 1
     embedding_provider: str = "fastembed"  # or "fake" (tests)
@@ -23,6 +28,8 @@ class Settings(BaseSettings):
     # agent runtime: any OpenRouter model id, swappable via env; the resolved model
     # version is stamped on every ExecutionRecord (ADR-0005)
     openrouter_api_key: str = ""
+    # "openrouter" (live) or "demo" (deterministic canned outputs, no LLM — ADR-0014)
+    llm_provider: str = "openrouter"
     llm_model: str = "google/gemini-2.5-flash"
     llm_timeout_seconds: int = 120  # per LLM call; bounded retries handled by litellm
     llm_validation_retries: int = 2  # whole-call retries on truncated/invalid JSON output
@@ -32,10 +39,12 @@ class Settings(BaseSettings):
     sec_user_agent: str = "Argus Research Platform srikrishna.vundavalli@gmail.com"
     sec_watchlist: list[str] = ["AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSM", "AVGO"]
     sec_filing_types: list[str] = ["10-K", "10-Q", "8-K"]
+    # feeds must answer 200 to an unauthenticated GET; CNBC (403) and Yahoo (429)
+    # blocked every pass and were dropped
     rss_feeds: list[str] = [
         "https://feeds.content.dowjones.io/public/rss/mw_topstories",
-        "https://www.cnbc.com/id/100003114/device/rss/rss.html",
-        "https://finance.yahoo.com/news/rssindex",
+        "https://feeds.a.dj.com/rss/RSSMarketsMain.xml",
+        "https://www.federalreserve.gov/feeds/press_all.xml",
     ]
 
     # connector schedules, seconds (Bible: RSS 15m, SEC hourly, profiles daily)

@@ -350,7 +350,8 @@ def client():
 
 
 def test_health_and_404s(client):
-    assert client.get("/health").json() == {"status": "ok"}
+    health = client.get("/health").json()
+    assert health["status"] == "ok" and isinstance(health["demo"], bool)
     missing = uuid.uuid4()
     assert client.get(f"/api/investigations/{missing}").status_code == 404
     assert client.get(f"/api/documents/{missing}").status_code == 404

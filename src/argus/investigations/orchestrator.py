@@ -369,7 +369,7 @@ def _fail_if_exhausted(
 
 
 def _ready_pending_tasks(
-    session: Session, investigation_id: uuid.UUID
+    session: Session, investigation_id: uuid.UUID, dependent_of: uuid.UUID | None = None
 ) -> list[InvestigationTask]:
     """Pending tasks whose prerequisites are all complete (readiness is derived,
     never stored — migration 0006). Locks the pending fan-in row(s) so concurrent
@@ -377,15 +377,22 @@ def _ready_pending_tasks(
     row instead of racing on independent READ COMMITTED snapshots — without this,
     two siblings completing concurrently can each see the other as "not complete
     yet" and both skip enqueueing the dependent (ADR-0010). order_by is required
-    for a deterministic lock-acquisition order across transactions locking >1 row."""
-    pending = session.scalars(
-        select(InvestigationTask).where(
-            InvestigationTask.investigation_id == investigation_id,
-            InvestigationTask.status == "pending",
-        )
-        .order_by(InvestigationTask.id)
-        .with_for_update()
-    ).all()
+    for a deterministic lock-acquisition order across transactions locking >1 row.
+
+    `dependent_of` narrows the locked set to the rows that actually depend on the
+    task that just completed, and _advance MUST pass it. Locking every pending row
+    deadlocks two concurrent workers: each already holds a row lock on its own task
+    (the `status = "running"` flip is autoflushed), and each still sees the other's
+    task as pending, so `FOR UPDATE` makes A wait on B's row while B waits on A's —
+    ordering can't help, because the first lock was taken before this query runs.
+    Postgres kills one, its job dies at max_attempts=1, and the DAG stalls."""
+    q = select(InvestigationTask).where(
+        InvestigationTask.investigation_id == investigation_id,
+        InvestigationTask.status == "pending",
+    )
+    if dependent_of is not None:
+        q = q.where(InvestigationTask.depends_on.contains([str(dependent_of)]))
+    pending = session.scalars(q.order_by(InvestigationTask.id).with_for_update()).all()
     statuses = {
         str(t.id): t.status
         for t in session.scalars(
@@ -404,9 +411,8 @@ def _advance(session: Session, completed: InvestigationTask) -> None:
     the completing task's transaction: the status flip and the follow-on job commit
     atomically (outbox pattern, ADR-0003)."""
     session.flush()
-    for t in _ready_pending_tasks(session, completed.investigation_id):
-        if str(completed.id) in t.depends_on:
-            _enqueue_task(session, t)
+    for t in _ready_pending_tasks(session, completed.investigation_id, completed.id):
+        _enqueue_task(session, t)
 
 
 def enqueue_ready_tasks(session: Session, investigation_id: uuid.UUID) -> int:
@@ -456,6 +462,17 @@ def drain(investigation_id: uuid.UUID) -> None:
                     Investigation.id == investigation_id, Investigation.status == "paused"
                 )
             )
-        if live is None or failed is not None or paused is not None:
+            # A dead task job leaves its task row behind as pending/running with no
+            # claimable job — nothing will ever move it, so without this the loop
+            # spins forever and hangs whatever called us (an API request, the demo
+            # seeder). _finalize turns the unfinished DAG into a failed investigation.
+            dead = session.scalar(
+                select(Job.id).where(
+                    Job.job_type == JOB_TYPE,
+                    Job.document_id == investigation_id,
+                    Job.status == "dead",
+                ).limit(1)
+            )
+        if live is None or failed is not None or paused is not None or dead is not None:
             return
         time.sleep(0.1)  # a job exists but isn't claimable yet (backoff or other worker)

@@ -36,6 +36,8 @@ app = typer.Typer(
 )
 eval_app = typer.Typer(no_args_is_help=True, help="Run evaluation harnesses (Phase 8).")
 app.add_typer(eval_app, name="eval")
+demo_app = typer.Typer(no_args_is_help=True, help="Seed the public demo dataset (ADR-0014).")
+app.add_typer(demo_app, name="demo")
 
 
 @app.callback()
@@ -191,6 +193,38 @@ def retry_dead(
         )
         style = "ok" if result.rowcount else "muted"
         console.print(f"retried [{style}]{result.rowcount}[/{style}] job(s)")
+
+
+@demo_app.command("seed")
+def demo_seed(
+    reset: bool = typer.Option(False, "--reset", help="delete existing investigations first"),
+    yes: bool = typer.Option(False, "--yes", help="skip the --reset confirmation"),
+) -> None:
+    """Build the public demo investigation set over the already-ingested corpus."""
+    from argus.demo import seed
+
+    if reset and not yes:
+        typer.confirm("delete ALL existing investigations and reseed?", abort=True)
+    try:
+        with console.status("[accent]seeding demo investigations...[/accent]"):
+            summary = seed(reset=reset)
+    except RuntimeError as exc:
+        console.print(f"[err]{exc}[/err]")
+        raise typer.Exit(1) from exc
+
+    table = Table(title="Demo investigations")
+    table.add_column("status")
+    table.add_column("count", justify="right")
+    for status, count in sorted(summary["statuses"].items()):
+        table.add_row(status, str(count))
+    console.print(table)
+    console.print(
+        f"[accent]reports[/accent] {summary['reports']}  "
+        f"[accent]evidence[/accent] {summary['evidence']}  "
+        f"[accent]dead jobs[/accent] {summary['dead_jobs']}  "
+        f"[accent]reviewed[/accent] {summary['collaboration']['reviewed']}  "
+        f"[accent]annotations[/accent] {summary['collaboration']['annotated']}"
+    )
 
 
 @eval_app.command("retrieval")

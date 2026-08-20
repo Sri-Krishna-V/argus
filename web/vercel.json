@@ -1,0 +1,20 @@
+{
+  "rewrites": [
+    {
+      "source": "/health",
+      "destination": "https://argus-api.95-111-240-157.sslip.io/health"
+    },
+    {
+      "source": "/health/:path*",
+      "destination": "https://argus-api.95-111-240-157.sslip.io/health/:path*"
+    },
+    {
+      "source": "/api/:path*",
+      "destination": "https://argus-api.95-111-240-157.sslip.io/api/:path*"
+    },
+    {
+      "source": "/:path*",
+      "destination": "/index.html"
+    }
+  ]
+}

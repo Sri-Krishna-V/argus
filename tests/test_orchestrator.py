@@ -477,7 +477,7 @@ def test_drain_returns_when_dependent_stuck_on_failed_task(db_session, monkeypat
         orchestrator.drain(inv_id)
         result["done"] = True
 
-    t = threading.Thread(target=_drain)
+    t = threading.Thread(target=_drain, daemon=True)  # daemon: a regression hangs
     t.start()
     t.join(timeout=10)
     assert not t.is_alive(), "drain() hung — Finding 2 regression"
@@ -519,3 +519,101 @@ def test_replay_matches_per_task(monkeypatch, fake_embeddings, seeded_companies)
         result = engine.replay_retrieval(session, inv_id)
         assert result["match"] is True
         assert result["tasks"]  # per-task breakdown
+
+
+@requires_db
+def test_advance_locks_only_dependents_so_siblings_cannot_deadlock(db_session):
+    """Two workers completing sibling collect tasks concurrently used to deadlock in
+    Postgres: each already holds its own task's row (run_task's `status = "running"`
+    flip is autoflushed) while the other transaction still sees that row as pending,
+    so a `FOR UPDATE` over *every* pending row made A wait on B's row and B on A's.
+    Postgres killed one, its job died at max_attempts=1, and drain() was left spinning
+    on a DAG that could never finish — observed in production while seeding the demo
+    set. Locking only the rows that depend on the completed task removes the cycle.
+
+    Note the sibling rows must be committed as `pending` here: the pre-existing
+    fan-in test commits them as `running`, which keeps them out of the locked set and
+    is why it never caught this."""
+    import threading
+
+    from argus.core.models import Job
+    from argus.investigations import engine, orchestrator
+    from argus.investigations.models import InvestigationTask
+
+    with session_scope() as session:
+        inv = engine.create(session, "q")
+        inv_id = inv.id
+        session.flush()
+        collects = [
+            InvestigationTask(
+                investigation_id=inv_id, task_type="collect_evidence", objective="x"
+            )
+            for _ in range(2)
+        ]
+        session.add_all(collects)
+        session.flush()
+        collect_ids = [c.id for c in collects]
+        session.add(
+            InvestigationTask(
+                investigation_id=inv_id, task_type="synthesize", objective="x",
+                depends_on=[str(c) for c in collect_ids],
+            )
+        )
+
+    barrier = threading.Barrier(2)
+    errors: list[Exception] = []
+
+    def complete(task_id):
+        try:
+            with session_scope() as s:
+                task = s.get(InvestigationTask, task_id)
+                task.status = "complete"
+                s.flush()  # takes this row's lock, exactly as run_task does
+                barrier.wait(timeout=15)
+                orchestrator._advance(s, task)
+        except Exception as exc:  # noqa: BLE001 - the deadlock victim lands here
+            errors.append(exc)
+
+    threads = [threading.Thread(target=complete, args=(tid,)) for tid in collect_ids]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=30)
+        assert not t.is_alive()
+
+    assert not errors, f"sibling completions deadlocked: {errors}"
+    with session_scope() as session:
+        assert session.scalar(
+            sa.select(sa.func.count())
+            .select_from(Job)
+            .where(Job.job_type == orchestrator.JOB_TYPE, Job.document_id == inv_id)
+        ), "synthesize was never enqueued"
+
+
+@requires_db
+def test_drain_returns_when_a_task_job_is_dead(db_session):
+    """A dead investigation.task job leaves its task row pending with nothing left to
+    claim, so drain()'s pending-tasks exit condition never holds and it spun forever —
+    hanging whatever called it (a POST /api/investigations request, the demo seeder).
+    It must return instead and let _finalize fail the investigation."""
+    import threading
+
+    from argus.core.models import Job
+    from argus.investigations import engine, orchestrator
+
+    with session_scope() as session:
+        inv = engine.create(session, "q")
+        inv_id = inv.id
+        orchestrator.compile_dag(session, inv, _plan(), company_ids=[])
+
+    with session_scope() as session:
+        session.execute(
+            sa.update(Job)
+            .where(Job.job_type == orchestrator.JOB_TYPE, Job.document_id == inv_id)
+            .values(status="dead", attempts=1, last_error="OperationalError: deadlock")
+        )
+
+    t = threading.Thread(target=orchestrator.drain, args=(inv_id,), daemon=True)
+    t.start()
+    t.join(timeout=10)
+    assert not t.is_alive(), "drain() hung on a dead task job"

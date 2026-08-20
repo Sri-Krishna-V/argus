@@ -22,10 +22,13 @@ export function ConfidenceMeter({ inv }: { inv: Investigation }) {
         </div>
       </div>
       <div className="grid grid-cols-2 gap-x-6 gap-y-1 font-mono text-xs">
-        {Object.entries(components).map(([key, value]) => (
-          <div key={key} className="flex justify-between">
+        {Object.entries(components).map(([key, component]) => (
+          <div key={key} className="flex justify-between gap-3">
             <span className="text-muted-foreground">{LABELS[key] ?? key}</span>
-            <span className="text-white">{Math.round(value * 100)}%</span>
+            <span className="tabular-nums text-white">
+              {Math.round(component.value * 100)}%
+              <span className="text-muted-foreground"> ×{component.weight}</span>
+            </span>
           </div>
         ))}
       </div>

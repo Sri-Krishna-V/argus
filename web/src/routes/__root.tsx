@@ -1,6 +1,7 @@
-import { createRootRoute } from "@tanstack/react-router"
-import { AppShell } from "@/components/app-shell"
+import { Outlet, createRootRoute } from "@tanstack/react-router"
 
+// The landing page (routes/index.tsx) renders outside the app shell, so the root
+// route stays bare: `app.tsx` owns the AppShell + AuthGate chrome for /app/*.
 export const Route = createRootRoute({
-  component: AppShell,
+  component: Outlet,
 })

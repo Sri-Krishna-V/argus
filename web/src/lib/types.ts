@@ -3,7 +3,13 @@ export interface Investigation {
   question: string
   status: string
   confidence: number | null
-  confidence_breakdown: { score?: number; components?: Record<string, number>; evidence_count?: number }
+  confidence_breakdown: {
+    score?: number
+    // the scorer stores each component as {value, weight} (investigations/confidence.py)
+    components?: Record<string, { value: number; weight: number }>
+    inputs?: Record<string, number>
+    evidence_count?: number
+  }
   version: number
   created_at: string
   last_refreshed_at: string | null

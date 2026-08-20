@@ -262,8 +262,11 @@ Security bar: internal network, single analyst ([ADR-0009](adr/0009-security-mod
 One `request_context` middleware in `argus.main` carries the whole HTTP surface: optional
 shared-key auth on `/api/*` (`ARGUS_API_KEY`, constant-time compare), request-ID
 correlation into the JSON logs, security headers (self-only CSP — HTMX is vendored, not
-CDN-loaded), a request-body size cap, and a per-IP rate limit on investigation creates
-(the endpoint that spends LLM tokens). Below the API: LLM calls carry a timeout and
+CDN-loaded), a request-body size cap, and per-IP rate limits on investigation creates (the
+endpoint that spends LLM tokens) and on search (the one endpoint an anonymous caller can make
+expensive). A public demo deployment sets `ARGUS_DEMO_MODE=1`, which exempts safe methods
+(`GET`/`HEAD`/`OPTIONS`) on `/api/*` from the key check and nothing else — every write still
+needs it ([ADR-0014](adr/0014-demo-mode.md)). Below the API: LLM calls carry a timeout and
 bounded retries; connector downloads are size-capped and SEC fetches allowlisted to
 `*.sec.gov`; all SQL is parameterized with a server-side statement timeout; the raw store
 is content-addressed so no external string ever becomes a filesystem path. Citations are
@@ -275,10 +278,10 @@ knob is an `ARGUS_` setting documented in `.env.example`.
 flowchart LR
     req(["Request"]):::apiui
     rid["request_id middleware\nX-Request-ID echoed/generated"]:::apiui
-    auth{"ARGUS_API_KEY set?"}:::apiui
+    auth{"ARGUS_API_KEY set?\n(demo mode exempts GET/HEAD/OPTIONS)"}:::apiui
     key{"X-API-Key /\nBearer matches?\n(constant-time compare)"}:::apiui
     size{"Content-Length ≤\nARGUS_MAX_BODY_BYTES?"}:::apiui
-    rate{"rate limit ok?\n(investigation creates only)"}:::apiui
+    rate{"rate limit ok?\n(investigation creates, search)"}:::apiui
     handler["Route handler"]:::apiui
     headers["Security headers applied\nCSP, X-Frame-Options, …"]:::apiui
     resp(["Response"]):::apiui
@@ -312,9 +315,22 @@ src/argus/
 ├── investigations/  # investigation engine, orchestrator.py (task DAG + jobs-outbox
 │                    #   execution, ADR-0010), confidence math, reports, staleness detection
 ├── observability/   # pipeline_runs recording + status queries
-├── api/             # FastAPI JSON routers
-└── ui/              # Jinja2 + HTMX views (workspace, reports, explorer, dashboard)
+└── api/             # FastAPI JSON routers (also mounts the built SPA from web/dist)
 ```
+
+The dashboard is a React SPA under `web/` (ADR-0013); `src/argus/ui/` was deleted with the
+Jinja2/htmx views it held, and `argus.ui` is no longer in the layer contract.
+
+### Public surfaces
+
+`/` is a public landing page — the ingestion pipeline told as a scroll, reading live figures
+from `/api/metrics/corpus` (all-time corpus totals) and `/api/metrics/pipeline` (rolling 24h
+throughput), and quoting a real cited passage from a completed investigation. It renders
+outside `AppShell`/`AuthGate`; the operator UI lives under `/app/*`, with redirect stubs at
+the pre-move URLs (`/search`, `/pipeline`, `/investigations/:id`). Both the FastAPI SPA
+catch-all and the Vercel rewrite already serve those paths at any depth. When the API cannot
+be reached the landing page falls back to a dated snapshot, labelled as one — it never
+presents a stale number as live.
 
 ## 10. Evaluation framework
 

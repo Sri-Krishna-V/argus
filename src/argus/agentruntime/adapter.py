@@ -15,6 +15,7 @@ from google.adk.sessions import InMemorySessionService
 from google.genai import types
 from pydantic import BaseModel, ValidationError
 
+from argus.agentruntime import canned
 from argus.agentruntime.schemas import ExecutionRecord
 from argus.core.config import get_settings
 
@@ -29,8 +30,13 @@ def run_structured[T: BaseModel](
     unparseable response must never silently become evidence. Providers sometimes
     return truncated JSON on a 200 (finish_reason "error"), which LiteLlm's
     transport retries never see — so the whole call retries on ValidationError
-    (PRD-V2 4.5 execution recovery)."""
+    (PRD-V2 4.5 execution recovery).
+
+    ARGUS_LLM_PROVIDER=demo serves the whole call from the deterministic canned
+    runtime instead — no key, no network, no cost (ADR-0014)."""
     settings = get_settings()
+    if settings.llm_provider == "demo":
+        return canned.run_structured(operation, instruction, message, schema)
     last_error: ValidationError | None = None
     for _ in range(settings.llm_validation_retries + 1):
         try:

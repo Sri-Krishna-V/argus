@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { useNavigate } from "@tanstack/react-router"
 import { toast } from "sonner"
 import { api } from "@/lib/api"
+import { READ_ONLY_HINT, useDemoMode } from "@/lib/demo"
 import type { Investigation } from "@/lib/types"
 import { Button } from "@/components/ui/button"
 import {
@@ -18,6 +19,7 @@ export function NewInvestigationDialog() {
   const [hypothesis, setHypothesis] = useState("")
   const queryClient = useQueryClient()
   const navigate = useNavigate()
+  const { writesLocked: demo } = useDemoMode()
 
   const mutation = useMutation({
     mutationFn: () =>
@@ -30,7 +32,7 @@ export function NewInvestigationDialog() {
       setOpen(false)
       setQuestion("")
       setHypothesis("")
-      navigate({ to: "/investigations/$investigationId", params: { investigationId: inv.id } })
+      navigate({ to: "/app/investigations/$investigationId", params: { investigationId: inv.id } })
     },
     onError: (err: Error) => toast.error(err.message),
   })
@@ -40,7 +42,13 @@ export function NewInvestigationDialog() {
       {/* ponytail: this codebase's shadcn/dialog is Base UI, not Radix — use its
           render prop instead of the brief's Radix-style `asChild` (see DialogClose
           usage in dialog.tsx for the same convention). */}
-      <DialogTrigger render={<Button>New investigation</Button>} />
+      <DialogTrigger
+        render={
+          <Button disabled={demo} title={demo ? READ_ONLY_HINT : undefined}>
+            New investigation
+          </Button>
+        }
+      />
       <DialogContent className="border border-border bg-white/[0.03] bg-popover">
         <DialogHeader>
           <DialogTitle className="font-light tracking-tight">New investigation</DialogTitle>

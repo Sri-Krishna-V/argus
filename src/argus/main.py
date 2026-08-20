@@ -38,8 +38,13 @@ SECURITY_HEADERS = {
     ),
 }
 
-# rate-limited routes: creating an investigation via the JSON API
-_RATE_LIMITED_PATHS = {"/api/investigations"}
+# rate-limited routes: (method, path) -> settings attribute holding its per-minute cap
+_RATE_LIMITED = {
+    ("POST", "/api/investigations"): "rate_limit_investigations_per_minute",
+    ("GET", "/api/search"): "rate_limit_search_per_minute",
+}
+# demo mode leaves these open on /api/*; everything else still needs the API key
+_SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 
 # ponytail: in-process bucket; move to a proxy/redis limiter if multiple API replicas
 _buckets: dict[str, tuple[float, float]] = {}  # client key -> (tokens, last_refill_monotonic)
@@ -88,19 +93,18 @@ async def request_context(request: Request, call_next):
                 JSONResponse({"detail": "request body too large"}, status_code=413), rid
             )
 
-        if (
-            request.method == "POST"
-            and request.url.path in _RATE_LIMITED_PATHS
-            and _rate_limited(
-                request.client.host if request.client else "unknown",
-                settings.rate_limit_investigations_per_minute,
-            )
-        ):
+        client = request.client.host if request.client else "unknown"
+        limit_attr = _RATE_LIMITED.get((request.method, request.url.path))
+        if limit_attr and _rate_limited(f"{limit_attr}:{client}", getattr(settings, limit_attr)):
             return _with_security_headers(
                 JSONResponse({"detail": "rate limit exceeded"}, status_code=429), rid
             )
 
-        if settings.api_key and request.url.path.startswith("/api/"):
+        # demo deployments serve reads anonymously; writes always need the key (ADR-0014)
+        needs_key = request.url.path.startswith("/api/") and not (
+            settings.demo_mode and request.method in _SAFE_METHODS
+        )
+        if settings.api_key and needs_key:
             auth = request.headers.get("Authorization", "")
             bearer = auth.removeprefix("Bearer ") if auth.startswith("Bearer ") else None
             key = request.headers.get("X-API-Key") or bearer

@@ -12,4 +12,8 @@ docker-compose.override.yml
 web/node_modules
 web/dist
 graphify-out/
-
+# impeccable: build evidence + local design config, not source
+.impeccable/review/
+.impeccable/mocks/
+.impeccable/config.local.json
+.claude/settings.local.json

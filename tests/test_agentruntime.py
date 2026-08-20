@@ -114,6 +114,9 @@ def test_adapter_constructs_litellm_with_timeout_and_bounded_retries(monkeypatch
         captured.update(kwargs)
         raise _LiteLlmCaptured
 
+    # pin the live provider: ARGUS_LLM_PROVIDER=demo would serve this call from the
+    # canned runtime and never construct LiteLlm at all (ADR-0014)
+    monkeypatch.setattr(get_settings(), "llm_provider", "openrouter")
     monkeypatch.setattr("argus.agentruntime.adapter.LiteLlm", fake_lite_llm)
     with pytest.raises(_LiteLlmCaptured):
         adapter.run_structured("op", "instr", "msg", ResearchPlan)

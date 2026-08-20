@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { setApiKey } from "@/lib/api"
+import { useDemoMode } from "@/lib/demo"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { StarGlyph } from "@/components/star-glyph"
@@ -11,6 +12,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   const [locked, setLocked] = useState(false)
   const [value, setValue] = useState("")
   const queryClient = useQueryClient()
+  const { demo } = useDemoMode()
 
   useEffect(() => {
     const onUnauthorized = () => setLocked(true)
@@ -47,6 +49,14 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
         >
           Save
         </Button>
+        {/* a read-only demo 401s on writes; without a way out, one stray click would
+            strand the visitor on this prompt with no key to type. Offered only where
+            reads are open — elsewhere dismissing it leaves an empty shell. */}
+        {demo && (
+          <Button variant="ghost" onClick={() => setLocked(false)}>
+            Continue without a key
+          </Button>
+        )}
       </div>
     </div>
   )

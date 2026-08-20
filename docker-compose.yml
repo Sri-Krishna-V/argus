@@ -1,6 +1,7 @@
 services:
   postgres:
     image: pgvector/pgvector:pg16
+    restart: unless-stopped
     environment:
       POSTGRES_USER: argus
       POSTGRES_PASSWORD: ${ARGUS_POSTGRES_PASSWORD:-argus}
@@ -18,13 +19,14 @@ services:
   api:
     build: .
     profiles: ["app"]
-    ports: ["8000:8000"]
+    restart: unless-stopped
+    ports: ["127.0.0.1:8000:8000"]
     environment:
       ARGUS_DATABASE_URL: postgresql+psycopg://argus:${ARGUS_POSTGRES_PASSWORD:-argus}@postgres:5432/argus
     env_file:
       - path: .env
         required: false
-    volumes: ["./data:/app/data"]
+    volumes: ["rawstore:/app/data", "hf_cache:/home/app/.cache"]
     depends_on:
       postgres:
         condition: service_healthy
@@ -38,13 +40,14 @@ services:
   worker:
     build: .
     profiles: ["app"]
+    restart: unless-stopped
     command: ["argus", "worker"]
     environment:
       ARGUS_DATABASE_URL: postgresql+psycopg://argus:${ARGUS_POSTGRES_PASSWORD:-argus}@postgres:5432/argus
     env_file:
       - path: .env
         required: false
-    volumes: ["./data:/app/data", "hf_cache:/home/app/.cache"]
+    volumes: ["rawstore:/app/data", "hf_cache:/home/app/.cache"]
     depends_on:
       postgres:
         condition: service_healthy
@@ -54,3 +57,4 @@ services:
 volumes:
   pgdata:
   hf_cache:
+  rawstore:

@@ -11,8 +11,13 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SearchRouteImport } from './routes/search'
 import { Route as PipelineRouteImport } from './routes/pipeline'
+import { Route as AppRouteImport } from './routes/app'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AppIndexRouteImport } from './routes/app.index'
 import { Route as InvestigationsInvestigationIdRouteImport } from './routes/investigations.$investigationId'
+import { Route as AppSearchRouteImport } from './routes/app.search'
+import { Route as AppPipelineRouteImport } from './routes/app.pipeline'
+import { Route as AppInvestigationsInvestigationIdRouteImport } from './routes/app.investigations.$investigationId'
 
 const SearchRoute = SearchRouteImport.update({
   id: '/search',
@@ -24,10 +29,20 @@ const PipelineRoute = PipelineRouteImport.update({
   path: '/pipeline',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AppRoute = AppRouteImport.update({
+  id: '/app',
+  path: '/app',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AppIndexRoute = AppIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppRoute,
 } as any)
 const InvestigationsInvestigationIdRoute =
   InvestigationsInvestigationIdRouteImport.update({
@@ -35,41 +50,94 @@ const InvestigationsInvestigationIdRoute =
     path: '/investigations/$investigationId',
     getParentRoute: () => rootRouteImport,
   } as any)
+const AppSearchRoute = AppSearchRouteImport.update({
+  id: '/search',
+  path: '/search',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppPipelineRoute = AppPipelineRouteImport.update({
+  id: '/pipeline',
+  path: '/pipeline',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppInvestigationsInvestigationIdRoute =
+  AppInvestigationsInvestigationIdRouteImport.update({
+    id: '/investigations/$investigationId',
+    path: '/investigations/$investigationId',
+    getParentRoute: () => AppRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/app': typeof AppRouteWithChildren
   '/pipeline': typeof PipelineRoute
   '/search': typeof SearchRoute
+  '/app/pipeline': typeof AppPipelineRoute
+  '/app/search': typeof AppSearchRoute
   '/investigations/$investigationId': typeof InvestigationsInvestigationIdRoute
+  '/app/': typeof AppIndexRoute
+  '/app/investigations/$investigationId': typeof AppInvestigationsInvestigationIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/pipeline': typeof PipelineRoute
   '/search': typeof SearchRoute
+  '/app/pipeline': typeof AppPipelineRoute
+  '/app/search': typeof AppSearchRoute
   '/investigations/$investigationId': typeof InvestigationsInvestigationIdRoute
+  '/app': typeof AppIndexRoute
+  '/app/investigations/$investigationId': typeof AppInvestigationsInvestigationIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/app': typeof AppRouteWithChildren
   '/pipeline': typeof PipelineRoute
   '/search': typeof SearchRoute
+  '/app/pipeline': typeof AppPipelineRoute
+  '/app/search': typeof AppSearchRoute
   '/investigations/$investigationId': typeof InvestigationsInvestigationIdRoute
+  '/app/': typeof AppIndexRoute
+  '/app/investigations/$investigationId': typeof AppInvestigationsInvestigationIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/pipeline' | '/search' | '/investigations/$investigationId'
+  fullPaths:
+    | '/'
+    | '/app'
+    | '/pipeline'
+    | '/search'
+    | '/app/pipeline'
+    | '/app/search'
+    | '/investigations/$investigationId'
+    | '/app/'
+    | '/app/investigations/$investigationId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/pipeline' | '/search' | '/investigations/$investigationId'
-  id:
-    | '__root__'
+  to:
     | '/'
     | '/pipeline'
     | '/search'
+    | '/app/pipeline'
+    | '/app/search'
     | '/investigations/$investigationId'
+    | '/app'
+    | '/app/investigations/$investigationId'
+  id:
+    | '__root__'
+    | '/'
+    | '/app'
+    | '/pipeline'
+    | '/search'
+    | '/app/pipeline'
+    | '/app/search'
+    | '/investigations/$investigationId'
+    | '/app/'
+    | '/app/investigations/$investigationId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AppRoute: typeof AppRouteWithChildren
   PipelineRoute: typeof PipelineRoute
   SearchRoute: typeof SearchRoute
   InvestigationsInvestigationIdRoute: typeof InvestigationsInvestigationIdRoute
@@ -91,12 +159,26 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PipelineRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/app': {
+      id: '/app'
+      path: '/app'
+      fullPath: '/app'
+      preLoaderRoute: typeof AppRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/app/': {
+      id: '/app/'
+      path: '/'
+      fullPath: '/app/'
+      preLoaderRoute: typeof AppIndexRouteImport
+      parentRoute: typeof AppRoute
     }
     '/investigations/$investigationId': {
       id: '/investigations/$investigationId'
@@ -105,11 +187,49 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof InvestigationsInvestigationIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/app/search': {
+      id: '/app/search'
+      path: '/search'
+      fullPath: '/app/search'
+      preLoaderRoute: typeof AppSearchRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/pipeline': {
+      id: '/app/pipeline'
+      path: '/pipeline'
+      fullPath: '/app/pipeline'
+      preLoaderRoute: typeof AppPipelineRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/investigations/$investigationId': {
+      id: '/app/investigations/$investigationId'
+      path: '/investigations/$investigationId'
+      fullPath: '/app/investigations/$investigationId'
+      preLoaderRoute: typeof AppInvestigationsInvestigationIdRouteImport
+      parentRoute: typeof AppRoute
+    }
   }
 }
 
+interface AppRouteChildren {
+  AppPipelineRoute: typeof AppPipelineRoute
+  AppSearchRoute: typeof AppSearchRoute
+  AppIndexRoute: typeof AppIndexRoute
+  AppInvestigationsInvestigationIdRoute: typeof AppInvestigationsInvestigationIdRoute
+}
+
+const AppRouteChildren: AppRouteChildren = {
+  AppPipelineRoute: AppPipelineRoute,
+  AppSearchRoute: AppSearchRoute,
+  AppIndexRoute: AppIndexRoute,
+  AppInvestigationsInvestigationIdRoute: AppInvestigationsInvestigationIdRoute,
+}
+
+const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AppRoute: AppRouteWithChildren,
   PipelineRoute: PipelineRoute,
   SearchRoute: SearchRoute,
   InvestigationsInvestigationIdRoute: InvestigationsInvestigationIdRoute,

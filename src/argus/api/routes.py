@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
+from argus.core.config import get_settings
 from argus.core.db import session_scope
 from argus.core.models import Job
 from argus.investigations import engine, lifecycle, orchestrator
@@ -24,7 +25,7 @@ from argus.investigations.models import (
     InvestigationTask,
     Report,
 )
-from argus.knowledge.models import Company, Document
+from argus.knowledge.models import Chunk, Company, Document, EntityMention, GraphEdge
 from argus.observability.models import PipelineRun
 from argus.research.citations import resolve
 from argus.research.retrieval import SearchFilters, search
@@ -39,8 +40,10 @@ def get_db():
 
 @router.get("/health")
 def health(session: Session = Depends(get_db)) -> dict:
+    """Public (never behind the API key) — the SPA also reads `demo` from here to
+    render itself read-only, so it needs no separate unauthenticated endpoint."""
     session.execute(select(1))
-    return {"status": "ok"}
+    return {"status": "ok", "demo": get_settings().demo_mode}
 
 
 @router.get("/health/ready")
@@ -558,4 +561,35 @@ def pipeline_metrics(session: Session = Depends(get_db)) -> dict:
         "oldest_pending_seconds": oldest_pending_seconds,
         "retries_24h": retries_24h,
         "document_count": session.scalar(select(func.count()).select_from(Document)),
+    }
+
+
+@router.get("/api/metrics/corpus")
+def corpus_metrics(session: Session = Depends(get_db)) -> dict:
+    """Corpus totals for the public landing page's provenance rail.
+
+    `/api/metrics/pipeline` reports a rolling 24h window; this one reports all-time
+    totals, which is what a first-time visitor is actually being shown. The SPA is a
+    pure API consumer (ADR-0013), so figures on screen need an endpoint.
+
+    ponytail: five unfiltered COUNT(*)s per request — trivial at 1.3k chunks. Cache in
+    a counters row (or a materialized view refreshed by the worker) if the corpus grows
+    past the point where a sequential scan per page view is rude.
+    """
+
+    def count(model) -> int:
+        return session.scalar(select(func.count()).select_from(model)) or 0
+
+    return {
+        "documents": count(Document),
+        "chunks": count(Chunk),
+        "entity_mentions": count(EntityMention),
+        "graph_edges": count(GraphEdge),
+        "investigations_complete": session.scalar(
+            select(func.count())
+            .select_from(Investigation)
+            .where(Investigation.status == "complete")
+        )
+        or 0,
+        "latest_document_at": session.scalar(select(func.max(Document.published_at))),
     }

@@ -1,4 +1,4 @@
-.PHONY: up down migrate test lint worker api eval stack stack-down backup restore web web-dev
+.PHONY: up down migrate test lint worker api eval demo-seed stack stack-down backup restore web web-dev
 
 up:            ## Start Postgres (pgvector) and wait until healthy
 	docker compose up -d --wait
@@ -28,6 +28,9 @@ web:           ## Install web dependencies and build the SPA into web/dist
 web-dev:       ## Run the SPA dev server (proxies /api and /health to :8000)
 	cd web && npm run dev
 
+demo-seed:     ## Seed demo investigations over the ingested corpus (destructive: --reset)
+	uv run argus demo seed
+
 eval:          ## Score retrieval and investigation quality against the golden set
 	uv run argus eval retrieval && uv run argus eval investigation
 
@@ -40,8 +43,12 @@ stack-down:    ## Stop the app containers (postgres keeps running; volumes untou
 backup:        ## pg_dump + raw-store tarball into backups/
 	mkdir -p backups
 	docker compose exec -T postgres pg_dump -U argus -Fc argus > backups/argus_$$(date +%Y%m%d_%H%M%S).dump
-	tar czf backups/raw_$$(date +%Y%m%d_%H%M%S).tgz data/raw
+	@if [ -n "$$(docker compose ps -q api)" ]; then \
+	  docker compose exec -T api tar czf - -C /app data/raw > backups/raw_$$(date +%Y%m%d_%H%M%S).tgz; \
+	else tar czf backups/raw_$$(date +%Y%m%d_%H%M%S).tgz data/raw; fi
 
 restore:       ## Restore: make restore DB_DUMP=backups/x.dump RAW_TGZ=backups/y.tgz
 	docker compose exec -T postgres pg_restore -U argus -d argus --clean --if-exists < $(DB_DUMP)
-	tar xzf $(RAW_TGZ)
+	@if [ -n "$$(docker compose ps -q api)" ]; then \
+	  docker compose exec -T api tar xzf - -C /app < $(RAW_TGZ); \
+	else tar xzf $(RAW_TGZ); fi

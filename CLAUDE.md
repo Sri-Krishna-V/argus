@@ -17,6 +17,7 @@ make migrate   # alembic upgrade head (needed before tests on a fresh DB)
 make test      # pytest — 156 tests; requires make up first
 make lint      # ruff check + lint-imports (layer contract)
 make eval      # score retrieval + investigation quality against evals/golden.json
+make demo-seed # argus demo seed — public demo investigation set (ADR-0014)
 make api       # uvicorn argus.main:app --reload (API + UI at :8000)
 make worker    # job outbox loop + connector scheduler (JSON logs)
 make stack / make stack-down   # full containerized stack (postgres + api + worker)
@@ -25,7 +26,8 @@ uv run alembic revision -m "..."           # new migration (hand-written, number
 uv run pytest tests/test_pipeline.py -v    # one file; -k <expr> for one test
 ```
 
-CLI: `argus status | search | ingest | reprocess | retry-dead | eval | worker` (src/argus/cli.py).
+CLI: `argus status | search | ingest | reprocess | retry-dead | eval | demo seed | worker`
+(src/argus/cli.py).
 
 ## Hard rules
 
@@ -81,3 +83,13 @@ CLI: `argus status | search | ingest | reprocess | retry-dead | eval | worker` (
   ARCHITECTURE.md §3 "Fan-in concurrency safety", commit 85d5452). Don't remove it to
   "simplify" the query.
 - Connectors: SEC fetches allowlisted to `*.sec.gov`; downloads capped at ARGUS_MAX_FETCH_BYTES.
+- The raw store is a **named docker volume** (`rawstore:/app/data`), not a bind mount: the
+  image pre-creates `/app/data` as `app:app` so the container user owns it on any host. A
+  `./data` bind mount inherits the host uid and silently breaks ingestion where that isn't
+  1000 (it did in prod for a month). `make backup`/`restore` stream the tarball through
+  `docker compose exec` for the same reason (falling back to the host `data/raw` when
+  the api container isn't up). Migrating an existing host with a populated `./data/raw`:
+  `docker compose cp data/raw api:/app/data/` once, or reprocessing loses its inputs.
+- Demo deployments (ADR-0014): `ARGUS_DEMO_MODE=1` exempts only GET/HEAD/OPTIONS on `/api/*`
+  from the API key; `ARGUS_LLM_PROVIDER=demo` swaps `agentruntime/canned.py` in behind
+  `adapter.run_structured` (deterministic, no key, `model=canned-demo`). Both default off.

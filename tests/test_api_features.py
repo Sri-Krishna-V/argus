@@ -35,8 +35,11 @@ def client():
 
 @pytest.fixture
 def with_api_key(monkeypatch):
-    """Turn auth on for one test; restores the (empty, disabled) default after."""
+    """Turn auth on for one test; restores the (empty, disabled) default after.
+    Demo mode is forced off so these assertions hold on a machine whose .env enables
+    it (a demo deployment answers anonymous GETs by design)."""
     monkeypatch.setenv("ARGUS_API_KEY", "test-secret-key")
+    monkeypatch.setenv("ARGUS_DEMO_MODE", "0")
     get_settings.cache_clear()
     yield "test-secret-key"
     get_settings.cache_clear()
@@ -106,6 +109,52 @@ def test_auth_on_health_and_ui_stay_open(client, with_api_key):
     assert client.get("/health").status_code == 200
     assert client.get("/health/ready").status_code == 200
     assert client.get("/").status_code == 200
+
+
+# --- demo mode: anonymous reads, keyed writes (ADR-0014) ---
+
+
+@pytest.fixture
+def with_demo_mode(monkeypatch, with_api_key):
+    """A demo deployment's config: auth on, reads open, canned agent runtime."""
+    monkeypatch.setenv("ARGUS_DEMO_MODE", "1")
+    monkeypatch.setenv("ARGUS_LLM_PROVIDER", "demo")
+    get_settings.cache_clear()
+    yield with_api_key
+    get_settings.cache_clear()
+
+
+def test_health_reports_demo_off_when_disabled(client, monkeypatch):
+    monkeypatch.setenv("ARGUS_DEMO_MODE", "0")
+    get_settings.cache_clear()
+    try:
+        assert client.get("/health").json() == {"status": "ok", "demo": False}
+    finally:
+        get_settings.cache_clear()
+
+
+def test_demo_mode_serves_reads_without_a_key(client, with_demo_mode):
+    assert client.get("/api/companies", params={"q": "NVIDIA"}).status_code == 200
+    assert client.get("/api/investigations").status_code == 200
+
+
+def test_demo_mode_still_rejects_unauthenticated_writes(client, with_demo_mode):
+    r = client.post("/api/investigations", json={"question": "anonymous write?"})
+    assert r.status_code == 401
+    assert r.json() == {"detail": "invalid or missing API key"}
+
+
+def test_demo_mode_allows_writes_with_the_key(client, with_demo_mode):
+    r = client.post(
+        "/api/investigations",
+        json={"question": "How is NVIDIA automotive revenue trending?"},
+        headers={"X-API-Key": with_demo_mode},
+    )
+    assert r.status_code == 201
+
+
+def test_health_reports_demo_mode(client, with_demo_mode):
+    assert client.get("/health").json() == {"status": "ok", "demo": True}
 
 
 # --- request-id correlation ---
@@ -247,6 +296,50 @@ def test_retry_job_not_dead_is_404(client):
 def test_pipeline_metrics_includes_document_count(client, seeded_companies):
     body = client.get("/api/metrics/pipeline").json()
     assert body["document_count"] >= 0
+
+
+CORPUS_KEYS = {
+    "documents",
+    "chunks",
+    "entity_mentions",
+    "graph_edges",
+    "investigations_complete",
+    "latest_document_at",
+}
+
+
+def test_corpus_metrics_counts_derived_artifacts(client, seeded_companies):
+    """The landing page's provenance rail reads all-time totals, so the endpoint has to
+    count the derived artifacts too — not just documents. Asserted as deltas: writes made
+    through `session_scope()` commit outside the per-test transaction, so absolute counts
+    carry whatever earlier tests in the session left behind."""
+    before = client.get("/api/metrics/corpus").json()
+    assert set(before) == CORPUS_KEYS
+
+    ingest_html(f"<html><body><p>Chipmaker demand commentary. {FILLER}</p></body></html>")
+    drain_queue()
+
+    after = client.get("/api/metrics/corpus").json()
+    assert after["documents"] == before["documents"] + 1
+    assert after["chunks"] > before["chunks"]
+    counted = ("documents", "chunks", "entity_mentions", "graph_edges")
+    assert all(isinstance(after[k], int) and after[k] >= 0 for k in counted)
+
+
+def test_corpus_metrics_counts_only_complete_investigations(client):
+    before = client.get("/api/metrics/corpus").json()["investigations_complete"]
+
+    with session_scope() as session:
+        session.add_all(
+            [
+                Investigation(question="q complete", status="complete"),
+                Investigation(question="q running", status="running"),
+                Investigation(question="q failed", status="failed"),
+            ]
+        )
+
+    after = client.get("/api/metrics/corpus").json()["investigations_complete"]
+    assert after == before + 1
 
 
 # --- security headers ---

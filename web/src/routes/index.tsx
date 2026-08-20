@@ -1,101 +1,258 @@
+import type { ReactNode } from "react"
 import { createFileRoute, Link } from "@tanstack/react-router"
-import { useQuery } from "@tanstack/react-query"
-import { api } from "@/lib/api"
-import type { Investigation } from "@/lib/types"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Skeleton } from "@/components/ui/skeleton"
-import { NewInvestigationDialog } from "@/components/new-investigation-dialog"
-import { StatusDot } from "@/components/status-dot"
+import { ArrowRightIcon, ArrowUpRightIcon } from "lucide-react"
 import { SignalRidge } from "@/components/signal-ridge"
+import { StarGlyph } from "@/components/star-glyph"
+import { CitationGate } from "@/components/landing/citation-gate"
+import { Descent, STAGE_COUNT } from "@/components/landing/descent"
+import { EvidenceClose } from "@/components/landing/evidence-close"
+import { shortDate, useShowcase } from "@/lib/landing"
+import { useDemoMode } from "@/lib/demo"
 
 export const Route = createFileRoute("/")({
-  component: InvestigationsPage,
+  component: Landing,
 })
 
-function InvestigationsPage() {
-  const { data, isPending, error } = useQuery({
-    queryKey: ["investigations"],
-    queryFn: () => api.get<Investigation[]>("/api/investigations"),
-  })
+const GITHUB = "https://github.com/Sri-Krishna-V/argus"
+const MICRO = "font-mono text-[11px] uppercase tracking-[0.14em] text-muted-foreground"
+
+function PrimaryAction({ children }: { children: ReactNode }) {
+  return (
+    <Link
+      to="/app"
+      className="group inline-flex items-center gap-2.5 rounded-md bg-primary px-5 py-3 text-sm font-medium text-primary-foreground shadow-[0_10px_30px_-12px_rgba(232,165,127,0.55)] transition-colors hover:bg-primary/90"
+    >
+      {children}
+      <ArrowRightIcon className="size-4 transition-transform group-hover:translate-x-0.5" />
+    </Link>
+  )
+}
+
+function Header() {
+  return (
+    <header className="sticky top-0 z-30 border-b border-border bg-background/80 backdrop-blur-md">
+      <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-6 px-5 py-3.5 sm:px-8">
+        <a href="#top" className="flex items-center gap-2 text-white">
+          <StarGlyph className="size-3.5 text-primary" />
+          <span className="text-base font-light tracking-tight">Argus</span>
+        </a>
+        <nav className="flex items-center gap-6">
+          <a
+            href={GITHUB}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1.5 font-mono text-[11px] tracking-[0.14em] text-muted-foreground uppercase transition-colors hover:text-white"
+          >
+            GitHub
+            <ArrowUpRightIcon className="size-3" />
+          </a>
+          <Link
+            to="/app"
+            className="font-mono text-[11px] tracking-[0.14em] text-white uppercase transition-colors hover:text-primary"
+          >
+            Open the demo
+          </Link>
+        </nav>
+      </div>
+    </header>
+  )
+}
+
+function FilingPlate() {
+  const { showcase } = useShowcase()
+  const citation = showcase?.citation
+  const title = citation?.title ?? "Meta Platforms, Inc. 10-Q 2026-07-30"
+  const filed = shortDate(citation?.published_at ?? "2026-07-30T00:00:00Z")
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="relative h-44 overflow-hidden rounded-lg border border-border bg-card">
-        <SignalRidge className="absolute inset-0 h-full w-full" />
-        <div className="absolute right-4 top-4">
-          <NewInvestigationDialog />
-        </div>
-        <div className="absolute bottom-4 left-5 flex flex-col gap-1">
-          <span className="font-mono text-[11px] tracking-[0.14em] text-muted-foreground uppercase">
-            Investigations
-          </span>
-          <h1 className="text-4xl font-light tracking-tight text-white">Signal out of noise</h1>
-          {data && (
-            <span className="font-mono text-[11px] tracking-[0.14em] text-muted-foreground uppercase">
-              {data.length} tracked
-            </span>
+    <figure className="w-full max-w-[26rem] rounded-md border border-border bg-card/70 p-4 backdrop-blur-sm">
+      <figcaption className="flex items-center justify-between gap-4">
+        <span className={MICRO}>SEC EDGAR</span>
+        <span className={`${MICRO} tabular-nums`}>filed {filed}</span>
+      </figcaption>
+      <p className="mt-3 font-mono text-[12px] leading-relaxed text-white/90">{title}</p>
+      <svg viewBox="0 0 320 34" className="mt-4 h-auto w-full" aria-hidden>
+        <g className="stroke-muted-foreground/35" strokeWidth="1.5" strokeLinecap="round">
+          {[276, 240, 296, 208, 262].map((w, i) => (
+            <line key={i} x1="0" y1={3 + i * 7} x2={w} y2={3 + i * 7} />
+          ))}
+        </g>
+      </svg>
+    </figure>
+  )
+}
+
+function RailStub() {
+  return (
+    <div className="flex items-center gap-3">
+      <div className="flex items-center gap-1.5" aria-hidden>
+        <span className="size-2.5 rounded-full bg-primary" />
+        {Array.from({ length: STAGE_COUNT - 1 }, (_, i) => (
+          <span key={i} className="size-2.5 rounded-full border border-border" />
+        ))}
+      </div>
+      <span className={`${MICRO} tabular-nums`}>
+        01 / {String(STAGE_COUNT).padStart(2, "0")} parse
+      </span>
+    </div>
+  )
+}
+
+function Hero() {
+  const { demo } = useDemoMode()
+  return (
+    <section id="top" className="relative overflow-hidden border-b border-border">
+      <SignalRidge className="absolute inset-0 h-full w-full" />
+      <div className="absolute inset-0 bg-gradient-to-r from-background via-background/70 to-transparent" />
+      <div className="relative mx-auto flex w-full max-w-6xl flex-col gap-12 px-5 pt-16 pb-20 sm:px-8 sm:pt-24 sm:pb-28">
+        <FilingPlate />
+        <div>
+          <h1 className="max-w-[52rem] text-[clamp(2.25rem,6.2vw,4.5rem)] leading-[1.03] font-light tracking-[-0.035em] text-white">
+            Every sentence resolves to a document chunk, or the run fails.
+          </h1>
+          <p className="mt-8 max-w-[44rem] text-lg leading-relaxed text-muted-foreground">
+            Argus turns SEC filings and news into immutable documents — then into chunks,
+            vectors, resolved entities and a graph where every edge names its source — and
+            answers research questions with cited, confidence-scored investigations.
+          </p>
+          <div className="mt-10 flex flex-wrap items-center gap-x-8 gap-y-4">
+            <PrimaryAction>Open a live investigation</PrimaryAction>
+            <a
+              href={GITHUB}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1.5 border-b border-border pb-1 text-sm text-white transition-colors hover:border-primary hover:text-primary"
+            >
+              Read the source
+              <ArrowUpRightIcon className="size-3.5" />
+            </a>
+          </div>
+          {demo && (
+            <p className={`mt-8 ${MICRO}`}>
+              Read-only demo · everything is readable without a key, every write needs one
+            </p>
           )}
         </div>
+        <div className="pt-4">
+          <RailStub />
+        </div>
       </div>
+    </section>
+  )
+}
 
-      {isPending && <Skeleton className="h-40 w-full" />}
-      {error && <p className="text-destructive">{error.message}</p>}
-      {data && (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="font-mono text-[11px] tracking-[0.14em] text-muted-foreground uppercase">
-                Question
-              </TableHead>
-              <TableHead className="font-mono text-[11px] tracking-[0.14em] text-muted-foreground uppercase">
-                Status
-              </TableHead>
-              <TableHead className="font-mono text-[11px] tracking-[0.14em] text-muted-foreground uppercase">
-                Confidence
-              </TableHead>
-              <TableHead className="font-mono text-[11px] tracking-[0.14em] text-muted-foreground uppercase">
-                Created
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {data.map((inv) => (
-              <TableRow key={inv.id} className="border-border">
-                <TableCell>
-                  <Link
-                    to="/investigations/$investigationId"
-                    params={{ investigationId: inv.id }}
-                    className="text-white hover:text-primary"
-                  >
-                    {inv.question}
-                  </Link>
-                  {inv.new_evidence_available && (
-                    <span className="ml-2 font-mono text-xs text-muted-foreground">· stale</span>
-                  )}
-                </TableCell>
-                <TableCell>
-                  <StatusDot status={inv.status} />
-                </TableCell>
-                <TableCell>
-                  {inv.confidence !== null ? (
-                    <div className="h-1.5 w-24 overflow-hidden rounded-full bg-muted-foreground/10">
-                      <div
-                        className="h-full bg-primary"
-                        style={{ width: `${Math.round(inv.confidence * 100)}%` }}
-                      />
-                    </div>
-                  ) : (
-                    <span className="text-muted-foreground">—</span>
-                  )}
-                </TableCell>
-                <TableCell className="font-mono text-xs text-muted-foreground">
-                  {new Date(inv.created_at).toLocaleString()}
-                </TableCell>
-              </TableRow>
+function DescentIntro() {
+  return (
+    <div className="mx-auto w-full max-w-6xl px-5 pt-20 pb-4 sm:px-8 sm:pt-28">
+      <h2 className="max-w-[40rem] text-3xl leading-[1.1] font-light tracking-[-0.025em] text-white sm:text-4xl">
+        One filing, seven stages, nothing lost on the way down
+      </h2>
+      <p className="mt-6 max-w-[44rem] leading-relaxed text-muted-foreground">
+        Ingestion is a deterministic pipeline, not a script that runs once and hopes. Each stage
+        is idempotent on the document it processes, so a retry costs nothing and a failure is
+        visible instead of silent. The figures below are read from the running deployment.
+      </p>
+    </div>
+  )
+}
+
+const REAL = [
+  "The corpus — SEC EDGAR and RSS connectors, fetching real filings and news",
+  "The seven-stage pipeline, the job outbox, retries and the dead-letter queue",
+  "Hybrid retrieval: Postgres full-text and pgvector fused with reciprocal rank fusion",
+  "Near-duplicate collapse, source ranking and stance classification",
+  "The task DAG, the citation gate and every confidence score on the site",
+]
+
+const NOT_REAL = [
+  "The language model. This deployment runs a deterministic canned runtime behind the same adapter boundary a real model would sit behind",
+  "Investigation plans, stance rationales and report prose — scripted, and every report carries model=canned-demo",
+  "Nothing else. There are no invented companies, filings, passages or numbers anywhere on this page",
+]
+
+function Limits() {
+  return (
+    <section id="limits" className="border-t border-border">
+      <div className="mx-auto grid w-full max-w-6xl gap-12 px-5 py-20 sm:px-8 sm:py-24 lg:grid-cols-2 lg:gap-20">
+        <div>
+          <h2 className="text-2xl font-light tracking-[-0.02em] text-white">What is real</h2>
+          <ul className="mt-6 flex flex-col gap-4">
+            {REAL.map((item) => (
+              <li key={item} className="flex gap-3 leading-relaxed text-muted-foreground">
+                <StarGlyph className="mt-1.5 size-2 shrink-0 text-primary" />
+                {item}
+              </li>
             ))}
-          </TableBody>
-        </Table>
-      )}
+          </ul>
+        </div>
+        <div>
+          <h2 className="text-2xl font-light tracking-[-0.02em] text-white">What is not</h2>
+          <ul className="mt-6 flex flex-col gap-4">
+            {NOT_REAL.map((item) => (
+              <li key={item} className="flex gap-3 leading-relaxed text-muted-foreground">
+                <StarGlyph className="mt-1.5 size-2 shrink-0 text-muted-foreground/50" />
+                {item}
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function Footer() {
+  return (
+    <footer id="site-footer" className="border-t border-border">
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-10 px-5 py-14 sm:px-8 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <div className="flex items-center gap-2 text-white">
+            <StarGlyph className="size-3.5 text-primary" />
+            <span className="text-base font-light tracking-tight">Argus</span>
+          </div>
+          <p className="mt-4 max-w-[34rem] text-sm leading-relaxed text-muted-foreground">
+            An enterprise research operating system: knowledge infrastructure that AI consumes,
+            not an investment adviser. Built by Sri Krishna V.
+          </p>
+        </div>
+        <nav className="flex flex-wrap items-center gap-x-8 gap-y-3">
+          <Link to="/app" className={`${MICRO} transition-colors hover:text-white`}>
+            Investigations
+          </Link>
+          <Link to="/app/search" className={`${MICRO} transition-colors hover:text-white`}>
+            Search
+          </Link>
+          <Link to="/app/pipeline" className={`${MICRO} transition-colors hover:text-white`}>
+            Pipeline
+          </Link>
+          <a
+            href={GITHUB}
+            target="_blank"
+            rel="noreferrer"
+            className={`${MICRO} inline-flex items-center gap-1.5 transition-colors hover:text-white`}
+          >
+            GitHub
+            <ArrowUpRightIcon className="size-3" />
+          </a>
+        </nav>
+      </div>
+    </footer>
+  )
+}
+
+function Landing() {
+  return (
+    <div className="min-h-screen bg-background text-foreground">
+      <Header />
+      <main>
+        <Hero />
+        <DescentIntro />
+        <Descent />
+        <CitationGate />
+        <EvidenceClose />
+        <Limits />
+      </main>
+      <Footer />
     </div>
   )
 }
